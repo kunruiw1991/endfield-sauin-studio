@@ -325,10 +325,22 @@ export function createSeam(ctx) {
         break;
       }
       case 'replayTake': {
-        const takeId = typeof payload === 'string' ? payload : p.takeId;
-        if (takeId) ctx.mechanics?.replayTake?.(takeId);
+        const takeId = typeof payload === 'string' ? payload : p.takeId || null;
+        ctx.mechanics?.replayTake?.(takeId, p);
         break;
       }
+      case 'replay':
+        ctx.mechanics?.replayCurrent?.(p);
+        break;
+      case 'replayDialogue':
+        ctx.mechanics?.replayDialogueLine?.();
+        break;
+      case 'prevDialogue':
+        ctx.mechanics?.prevDialogue?.();
+        break;
+      case 'replayEnding':
+        ctx.mechanics?.replayEnding?.();
+        break;
       default:
         break;
     }
@@ -544,6 +556,7 @@ export function createSeam(ctx) {
       voMuted: Boolean(raw.voMuted),
       sfxMuted: Boolean(raw.sfxMuted),
       activeVoId: raw.activeVoId ?? (ctx.activeCaption ? ctx.activeCaption.voId : null),
+      lastVoId: raw.lastVoId ?? null,
       activeCaption: activeCaptionText,
       manifestLoaded: Boolean(raw.manifestLoaded),
       clipsTotal: Number(raw.clipsTotal) || 0,

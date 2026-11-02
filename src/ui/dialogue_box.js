@@ -33,10 +33,21 @@ export function createDialogueBox(ctx, rootEl, bindTap, helpers) {
         <div id="dialogue-speaker" class="dialogue-speaker-ribbon">Sarkaz Director</div>
         <p id="dialogue-text" class="dialogue-line-text"></p>
         <div class="dialogue-footer-row">
-          <span id="dialogue-counter" class="dialogue-step-counter">Line 1 / 1</span>
-          <button type="button" id="btn-dialogue-next" class="sauin-btn btn-primary" data-action="next-dialogue">
-            <span>Next \u25B6</span>
-          </button>
+          <span id="dialogue-counter" class="dialogue-step-counter">
+            <span class="dlg-cnt-full">Act 1 &middot; Line 1 / 1</span>
+            <span class="dlg-cnt-short">1 / 1</span>
+          </span>
+          <div class="dialogue-footer-actions">
+            <button type="button" id="btn-dialogue-prev" class="sauin-btn btn-icon-pill is-hidden" hidden disabled data-action="prev-dialogue" aria-label="Previous Dialogue Line">
+              <span>\u25C0 Prev</span>
+            </button>
+            <button type="button" id="btn-dialogue-replay" class="sauin-btn btn-icon-pill btn-replay-accent" data-action="replay-dialogue" aria-label="Replay Current Line Voiceover">
+              <span>\uD83D\uDD0A Replay</span>
+            </button>
+            <button type="button" id="btn-dialogue-next" class="sauin-btn btn-primary" data-action="next-dialogue">
+              <span>Next \u25B6</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -45,12 +56,25 @@ export function createDialogueBox(ctx, rootEl, bindTap, helpers) {
   rootEl.appendChild(el);
 
   const btnSkip = el.querySelector('#btn-dialogue-skip');
+  const btnPrev = el.querySelector('#btn-dialogue-prev');
+  const btnReplay = el.querySelector('#btn-dialogue-replay');
   const btnNext = el.querySelector('#btn-dialogue-next');
+  const footerActionsEl = el.querySelector('.dialogue-footer-actions');
   const barWrap = el.querySelector('#dialogue-stage-wrap');
   const portraitImg = el.querySelector('#dialogue-portrait-img');
   const speakerEl = el.querySelector('#dialogue-speaker');
   const textEl = el.querySelector('#dialogue-text');
-  const counterEl = el.querySelector('#dialogue-counter');
+  const cntFullEl = el.querySelector('.dlg-cnt-full');
+  const cntShortEl = el.querySelector('.dlg-cnt-short');
+
+  // Prevent pointer/click events on footer buttons from ever bubbling up to barWrap.
+  if (footerActionsEl) {
+    for (const evtName of ['pointerdown', 'pointerup', 'click']) {
+      footerActionsEl.addEventListener(evtName, (ev) => {
+        ev.stopPropagation();
+      });
+    }
+  }
 
   let lastStepTs = -1000;
   function stepNext() {
@@ -71,6 +95,29 @@ export function createDialogueBox(ctx, rootEl, bindTap, helpers) {
     helpers.requestSync();
   });
 
+  bindTap(btnPrev, (e) => {
+    e?.stopPropagation?.();
+    helpers.unlockAudio();
+    ctx.mechanics?.prevDialogue?.();
+    helpers.requestSync();
+  });
+
+  bindTap(btnReplay, (e) => {
+    e?.stopPropagation?.();
+    helpers.unlockAudio();
+    ctx.audio?.setMuted?.({ vo: false });
+    ctx.persistence?.saveAudio?.({ voMuted: false });
+    if (typeof ctx.mechanics?.replayDialogueLine === 'function') {
+      ctx.mechanics.replayDialogueLine({ unmute: true });
+    } else {
+      const line = resolveCurrentDialogueLine(ctx.state);
+      if (line.voId) {
+        ctx.audio?.playVO?.(line.voId, { force: true, unmute: true });
+      }
+    }
+    helpers.requestSync();
+  });
+
   bindTap(btnNext, (e) => {
     e?.stopPropagation?.();
     stepNext();
@@ -80,18 +127,18 @@ export function createDialogueBox(ctx, rootEl, bindTap, helpers) {
   let barHandledUp = false;
   let barUpTs = -999;
   barWrap.addEventListener('pointerdown', (e) => {
-    if (e.target && e.target.closest('button')) return;
+    if (e?.target?.closest?.('button')) return;
     barHandledUp = false;
   });
   barWrap.addEventListener('pointerup', (e) => {
     if (e.button !== undefined && e.button !== 0) return;
-    if (e.target && e.target.closest('button')) return;
+    if (e?.target?.closest?.('button')) return;
     barHandledUp = true;
     barUpTs = typeof performance !== 'undefined' ? performance.now() : Date.now();
     stepNext();
   });
   barWrap.addEventListener('click', (e) => {
-    if (e.target && e.target.closest('button')) return;
+    if (e?.target?.closest?.('button')) return;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     if (barHandledUp && now - barUpTs < 280) {
       barHandledUp = false;
@@ -112,6 +159,7 @@ export function createDialogueBox(ctx, rootEl, bindTap, helpers) {
     const speakerId = entry?.speakerId || helpers.speakerNameToId(speakerName) || 'sarkaz_director';
     const portraitMood = entry?.portraitMood || 'neutral';
     const text = state?.dialogue?.text || entry?.text || '';
+    const voId = state?.dialogue?.voId || entry?.voId || '';
     const total = Number(state?.dialogue?.total) || lines.length || 1;
     return {
       index: idx,
@@ -120,6 +168,7 @@ export function createDialogueBox(ctx, rootEl, bindTap, helpers) {
       speakerName,
       portraitMood,
       text,
+      voId,
     };
   }
 
@@ -132,7 +181,19 @@ export function createDialogueBox(ctx, rootEl, bindTap, helpers) {
     const line = resolveCurrentDialogueLine(state);
     speakerEl.textContent = line.speakerName;
     textEl.textContent = line.text;
-    counterEl.textContent = `Act ${state.actId || 1} \u00B7 Line ${line.index + 1} / ${line.total}`;
+    if (cntFullEl) {
+      cntFullEl.textContent = `Act ${state.actId || 1} \u00B7 Line ${line.index + 1} / ${line.total}`;
+    }
+    if (cntShortEl) {
+      cntShortEl.textContent = `${line.index + 1}/${line.total}`;
+    }
+
+    const atFirstLine = line.index <= 0;
+    if (btnPrev) {
+      btnPrev.hidden = atFirstLine;
+      btnPrev.disabled = atFirstLine;
+      btnPrev.classList.toggle('is-hidden', atFirstLine);
+    }
 
     const pKey = `${line.speakerId}::${line.portraitMood}`;
     if (pKey !== lastPortraitKey) {

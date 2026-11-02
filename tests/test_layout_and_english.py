@@ -383,6 +383,48 @@ AUDIT_VIEWPORT_SCREEN_JS = r"""
     }
   }
 
+  // 10. Top Utility Bar (#top-bar buttons) vs #act-plaque overlap check (especially narrow portrait)
+  let topBarPlaqueOverlap = null;
+  const actPlaque = document.getElementById('act-plaque');
+  if (actPlaque && isVisible(actPlaque)) {
+    const apr = roundRect(actPlaque.getBoundingClientRect());
+    for (const c of fgControls) {
+      if (!c.el.closest('#top-bar')) continue;
+      const ox = Math.min(c.rect.right, apr.right) - Math.max(c.rect.left, apr.left);
+      const oy = Math.min(c.rect.bottom, apr.bottom) - Math.max(c.rect.top, apr.top);
+      if (ox > 2.5 && oy > 2.5) {
+        topBarPlaqueOverlap = {
+          btn: c.desc,
+          ox: Math.round(ox * 10) / 10,
+          oy: Math.round(oy * 10) / 10,
+          btnRect: c.rect,
+          plaqueRect: apr,
+        };
+        break;
+      }
+    }
+  }
+
+  // 11. Per-screen Replay button presence & visibility check
+  const requiredReplayByScreen = {
+    title: ['#btn-title-replay'],
+    dialogue: ['#btn-dialogue-replay', '#btn-top-replay'],
+    dialogue_line2: ['#btn-dialogue-prev', '#btn-dialogue-replay', '#btn-dialogue-next', '#btn-top-replay'],
+    blocking_act1: ['#btn-top-replay', '#btn-reel-replay'],
+    blocking_act4: ['#btn-top-replay', '#btn-reel-replay'],
+    take_result: ['#btn-take-replay', '#btn-top-replay'],
+    ending: ['#btn-ending-replay', '#btn-top-replay'],
+    album: ['[data-replay-vo]'],
+    dialogue_log: ['.btn-log-replay', '#btn-log-replay-cutscene'],
+  };
+  const missingReplayButtons = [];
+  for (const sel of (requiredReplayByScreen[screenName] || [])) {
+    const match = Array.from(document.querySelectorAll(sel)).find(isVisible);
+    if (!match) {
+      missingReplayButtons.push(sel);
+    }
+  }
+
   return {
     screen: screenName,
     vw,
@@ -398,6 +440,8 @@ AUDIT_VIEWPORT_SCREEN_JS = r"""
     narrowCaption,
     narrationClipped,
     polaroidRibbonOverlap,
+    topBarPlaqueOverlap,
+    missingReplayButtons,
     primaryCtaOk,
     primaryCtaDetail,
   };
@@ -568,6 +612,21 @@ def _prepare_screen(b: Browser, screen: str) -> None:
         })()""",
         await_promise=False,
     )
+  elif screen == 'dialogue_line2':
+    b.eval(
+        r"""(() => {
+          const H = window.__HALLOWEEN__;
+          if (H.getState().phase !== 'dialogue') {
+            H.startLevel({ act: 1, seed: 20261031, skipDialogue: false, resetMoods: false });
+            H.stepFrames(65);
+          }
+          if ((H.getState().dialogue?.index ?? 0) === 0) {
+            H.act('advanceDialogue');
+            H.stepFrames(15);
+          }
+        })()""",
+        await_promise=False,
+    )
   elif screen == 'blocking_act1':
     b.eval(
         r"""(() => {
@@ -635,18 +694,33 @@ def _prepare_screen(b: Browser, screen: str) -> None:
         })()""",
         await_promise=False,
     )
+  elif screen == 'dialogue_log':
+    b.eval(
+        r"""(() => {
+          const H = window.__HALLOWEEN__;
+          H.act('closeModal');
+          H.startLevel({ act: 1, seed: 20261031, skipDialogue: true, resetMoods: false });
+          H.stepFrames(50);
+          if (H.getState().phase === 'dialogue') { H.act('skipDialogue'); H.stepFrames(20); }
+          H.act('openModal', { modal: 'dialogue_log' });
+          H.stepFrames(20);
+        })()""",
+        await_promise=False,
+    )
   b.eval('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))', await_promise=True)
 
 
 SCREEN_SPECS = [
     ('title', r'start\s*filming'),
     ('dialogue', r'skip|next'),
+    ('dialogue_line2', r'next'),
     ('blocking_act1', r'roll\s*camera'),
     ('blocking_act4', r'roll\s*camera'),
     ('take_result', r'next\s*act|reshoot'),
     ('ending', r'play\s*again|film\s*again'),
     ('album', r'close|×|✕|back'),
     ('rewards', r'close|×|✕|back|claim'),
+    ('dialogue_log', r'close|×|✕|replay'),
 ]
 
 
@@ -670,7 +744,17 @@ def _run_g13_responsive_viewports(b: Browser, save_shots: bool = True) -> dict[s
       audit['viewport'] = vp_label
       audits.append(audit)
 
-      if save_shots and screen_name in ('title', 'dialogue', 'blocking_act1', 'take_result', 'ending', 'album', 'rewards'):
+      if save_shots and screen_name in (
+          'title',
+          'dialogue',
+          'dialogue_line2',
+          'blocking_act1',
+          'take_result',
+          'ending',
+          'album',
+          'rewards',
+          'dialogue_log',
+      ):
         shot_path = os.path.join(QA_DIR, f'layout_{vp_label}_{screen_name}.jpg')
         b.screenshot(shot_path, quality=82)
         saved_shots.append(shot_path)
@@ -727,6 +811,16 @@ def _run_g13_responsive_viewports(b: Browser, save_shots: bool = True) -> dict[s
             f'@ui-hud: .dialogue-polaroid overlaps .dialogue-speaker-ribbon at {vp_label} [{screen_name}] '
             f'by {pro["ox"]}x{pro["oy"]} px'
         )
+      if audit.get('topBarPlaqueOverlap'):
+        tbp = audit['topBarPlaqueOverlap']
+        failures.append(
+            f'@ui-hud: #top-bar button {tbp["btn"]} overlaps #act-plaque at {vp_label} [{screen_name}] '
+            f'by {tbp["ox"]}x{tbp["oy"]} px'
+        )
+      if audit.get('missingReplayButtons'):
+        failures.append(
+            f'@ui-hud: Missing visible Replay button(s) {audit["missingReplayButtons"]} at {vp_label} [{screen_name}]'
+        )
 
   passed = len(failures) == 0
   summary = (
@@ -737,7 +831,7 @@ def _run_g13_responsive_viewports(b: Browser, save_shots: bool = True) -> dict[s
   )
   return make_gate_result(
       'G13',
-      '4-Viewport Responsive Layout',
+      '5-Viewport Responsive Layout',
       passed,
       summary,
       {'checksCount': len(audits), 'screenshots': saved_shots, 'audits': audits},

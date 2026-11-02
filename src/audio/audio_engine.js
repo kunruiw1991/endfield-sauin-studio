@@ -29,6 +29,7 @@ export function createAudioEngine(ctx) {
   let tutCastVoPlayed = false;
   let masterVoPlayed = false;
   let albumOwnedVoId = null;
+  let logOwnedVoId = null;
   let lastHoverSlot = null;
   let lastCurtainSfxMs = -1000;
 
@@ -93,16 +94,46 @@ export function createAudioEngine(ctx) {
   }
 
   function playVO(voId, opts = {}) {
+    if (opts && opts.unmute) {
+      unlock();
+      if (voPlayer.getStats().voMuted) {
+        setMuted({ vo: false });
+      }
+    }
     const p = voPlayer.playVO(voId, opts);
-    if (ctx?.state?.modal === 'album' && voPlayer.getStats().activeVoId === voId) {
+    const activeId = voPlayer.getStats().activeVoId;
+    if (ctx?.state?.modal === 'album' && activeId === voId) {
       albumOwnedVoId = voId;
+    } else if (
+      (ctx?.state?.modal === 'dialogue_log' || ctx?.state?.modal === 'log') &&
+      activeId === voId
+    ) {
+      logOwnedVoId = voId;
     }
     return p;
   }
 
   function stopVO() {
     albumOwnedVoId = null;
+    logOwnedVoId = null;
     voPlayer.stopVO();
+  }
+
+  function replayLastVO(opts = {}) {
+    const voStats = voPlayer.getStats();
+    const targetVoId = opts?.voId || voStats.activeVoId || voStats.lastVoId;
+    if (!targetVoId) {
+      return Promise.resolve(false);
+    }
+    unlock();
+    if (opts && opts.unmute && voStats.voMuted) {
+      setMuted({ vo: false });
+    }
+    return playVO(targetVoId, {
+      force: true,
+      unmute: Boolean(opts?.unmute),
+      priority: opts?.priority,
+    });
   }
 
   function setBGM(playing) {
@@ -188,9 +219,25 @@ export function createAudioEngine(ctx) {
         if (payload && payload.voId) {
           playVO(payload.voId, {
             force: Boolean(payload.force),
+            unmute: Boolean(payload.unmute),
             priority: payload.priority,
           });
         }
+      })
+    );
+
+    unsubscribers.push(
+      events.on('voReplay', (payload = {}) => {
+        const voId = typeof payload === 'string' ? payload : payload?.voId;
+        const unmute =
+          typeof payload === 'object' && payload !== null ? Boolean(payload.unmute) : false;
+        const priority =
+          typeof payload === 'object' && payload !== null ? payload.priority : undefined;
+        replayLastVO({
+          voId,
+          unmute,
+          priority,
+        });
       })
     );
 
@@ -276,8 +323,8 @@ export function createAudioEngine(ctx) {
       events.on('dialogueStep', (payload = {}) => {
         playSFX('ui_click', { pitch: 1.08, vol: 0.45 });
         const voId = payload?.voId || payload?.line?.voId || ctx?.state?.dialogue?.voId;
-        if (voId) {
-          playVO(voId);
+        if (voId && voPlayer.getStats().activeVoId !== voId) {
+          playVO(voId, { force: true });
         }
       })
     );
@@ -451,6 +498,12 @@ export function createAudioEngine(ctx) {
         ) {
           stopVO();
         } else if (
+          (closedModal === 'dialogue_log' || closedModal === 'log') &&
+          curVo &&
+          curVo === logOwnedVoId
+        ) {
+          stopVO();
+        } else if (
           closedModal === 'rewards' &&
           (curVo === 'vo_all_complete' || curVo === 'vo_rewards_claim')
         ) {
@@ -526,6 +579,7 @@ export function createAudioEngine(ctx) {
       voMuted: voStats.voMuted,
       sfxMuted,
       activeVoId: voStats.activeVoId,
+      lastVoId: voStats.lastVoId,
       activeCaption: voStats.activeCaption,
       manifestLoaded: voStats.manifestLoaded,
       clipsTotal: voStats.clipsTotal,
@@ -540,6 +594,7 @@ export function createAudioEngine(ctx) {
     init,
     unlock,
     playVO,
+    replayLastVO,
     stopVO,
     playSFX,
     setBGM,

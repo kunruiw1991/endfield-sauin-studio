@@ -332,6 +332,10 @@ export function createUI(ctx, rootEl) {
           <span class="top-btn-full">\uD83D\uDCDC Log</span>
           <span class="top-btn-short">\uD83D\uDCDC</span>
         </button>
+        <button type="button" id="btn-top-replay" class="sauin-btn btn-icon-pill btn-replay-accent is-hidden" hidden data-action="top-replay" title="Replay Voice / Take (R)" aria-label="Replay Voice or Take (R)">
+          <span class="top-btn-full">\u21BB Replay</span>
+          <span class="top-btn-short">\u21BB</span>
+        </button>
         <button type="button" id="btn-toggle-bgm" class="sauin-btn btn-icon-pill" data-action="toggle-bgm" aria-label="Toggle Background Music">
           <span class="top-btn-full">\uD83C\uDFB5 Music</span>
           <span class="top-btn-short">\uD83C\uDFB5</span>
@@ -380,6 +384,18 @@ export function createUI(ctx, rootEl) {
       unlockAudio();
       ctx.events?.emit?.('sfx', { name: 'ui_click', vol: 0.6 });
       openModal('dialogue_log');
+    });
+
+    bindTap(topBarEl.querySelector('#btn-top-replay'), () => {
+      unlockAudio();
+      ctx.audio?.setMuted?.({ vo: false });
+      ctx.persistence?.saveAudio?.({ voMuted: false });
+      if (typeof ctx.mechanics?.replayCurrent === 'function') {
+        ctx.mechanics.replayCurrent({ unmute: true });
+      } else {
+        ctx.audio?.replayLastVO?.({ unmute: true });
+      }
+      requestSync();
     });
 
     bindTap(topBarEl.querySelector('#btn-toggle-bgm'), () => {
@@ -446,6 +462,11 @@ export function createUI(ctx, rootEl) {
         </div>
       </div>
       <div id="dlg-log-body" class="modal-scroll-text-body"></div>
+      <div id="dlg-log-footer" class="modal-footer-bar">
+        <button type="button" id="btn-log-replay-cutscene" class="sauin-btn btn-ticket btn-replay-accent" data-action="log-replay-cutscene">
+          <span>\uD83C\uDFA5 Replay Cutscene</span>
+        </button>
+      </div>
     `;
     modalLayerEl.appendChild(dialogueLogModalEl);
 
@@ -453,6 +474,18 @@ export function createUI(ctx, rootEl) {
       unlockAudio();
       ctx.events?.emit?.('sfx', { name: 'ui_click', vol: 0.6 });
       closeModal();
+    });
+
+    bindTap(dialogueLogModalEl.querySelector('#btn-log-replay-cutscene'), () => {
+      unlockAudio();
+      ctx.audio?.setMuted?.({ vo: false });
+      ctx.persistence?.saveAudio?.({ voMuted: false });
+      const phaseBeforeClose = ctx.state?.phase;
+      closeModal();
+      if (phaseBeforeClose === 'blocking' || phaseBeforeClose === 'take_result') {
+        ctx.mechanics?.replayCutscene?.();
+      }
+      requestSync();
     });
 
     guideModalEl = document.createElement('div');
@@ -597,8 +630,73 @@ export function createUI(ctx, rootEl) {
     toastEl.hidden = true;
     host.appendChild(toastEl);
 
+    ctx.events?.on?.('voStarted', () => {
+      if (ctx.state) {
+        syncTopBar(ctx.state);
+        syncSpeakingIndicators(ctx.state, true);
+      }
+    });
+    ctx.events?.on?.('voEnded', () => {
+      if (ctx.state) {
+        syncSpeakingIndicators(ctx.state, false);
+      }
+    });
+    ctx.events?.on?.('voReplay', () => {
+      if (ctx.state) {
+        syncTopBar(ctx.state);
+        syncSpeakingIndicators(ctx.state, false);
+      }
+    });
+
     if (ctx.state) {
       sync(ctx.state);
+    }
+  }
+
+  let pulsePhaseBit = false;
+
+  function syncSpeakingIndicators(state, restartPulse = false) {
+    if (!host) return;
+    if (restartPulse) {
+      pulsePhaseBit = !pulsePhaseBit;
+    }
+    const pulseClass = pulsePhaseBit ? 'vo-pulse-b' : 'vo-pulse-a';
+    const otherPulseClass = pulsePhaseBit ? 'vo-pulse-a' : 'vo-pulse-b';
+
+    const au = ctx.audio?.getAudioStats?.() || {};
+    const activeVoId = !au.voMuted && au.activeVoId ? String(au.activeVoId) : '';
+    const speaking = Boolean(activeVoId);
+    const phase = state?.phase || 'title';
+    const modal = state?.modal || null;
+
+    const setSpeaking = (btn, active) => {
+      if (!btn) return;
+      btn.classList.toggle('is-speaking', Boolean(active));
+      if (active) {
+        btn.classList.remove(otherPulseClass);
+        btn.classList.add(pulseClass);
+      } else {
+        btn.classList.remove('vo-pulse-a', 'vo-pulse-b');
+      }
+    };
+
+    setSpeaking(host.querySelector('#btn-title-replay'), speaking && phase === 'title' && !modal);
+    setSpeaking(host.querySelector('#btn-dialogue-replay'), speaking && phase === 'dialogue' && !modal);
+    setSpeaking(host.querySelector('#btn-top-replay'), speaking && phase !== 'title' && !modal);
+    setSpeaking(host.querySelector('#btn-take-replay'), speaking && phase === 'take_result' && !modal);
+    setSpeaking(host.querySelector('#btn-ending-replay'), speaking && phase === 'ending' && !modal);
+
+    for (const btn of host.querySelectorAll('.btn-log-replay[data-vo-id]')) {
+      setSpeaking(
+        btn,
+        speaking && modal === 'dialogue_log' && btn.getAttribute('data-vo-id') === activeVoId
+      );
+    }
+    for (const btn of host.querySelectorAll('[data-replay-vo]')) {
+      setSpeaking(
+        btn,
+        speaking && modal === 'album' && btn.getAttribute('data-replay-vo') === activeVoId
+      );
     }
   }
 
@@ -614,6 +712,7 @@ export function createUI(ctx, rootEl) {
     const btnAlbum = topBarEl.querySelector('#btn-top-album');
     const btnRewards = topBarEl.querySelector('#btn-top-rewards');
     const btnLog = topBarEl.querySelector('#btn-dialogue-log');
+    const btnReplay = topBarEl.querySelector('#btn-top-replay');
     const btnBgm = topBarEl.querySelector('#btn-toggle-bgm');
     const btnVo = topBarEl.querySelector('#btn-toggle-vo');
 
@@ -628,6 +727,11 @@ export function createUI(ctx, rootEl) {
 
     btnLog.hidden = !isStageOrDialog;
     btnLog.classList.toggle('is-hidden', !isStageOrDialog);
+
+    if (btnReplay) {
+      btnReplay.hidden = isTitle;
+      btnReplay.classList.toggle('is-hidden', isTitle);
+    }
 
     const prog = state?.progress || {};
     const takesCount = Array.isArray(prog.unlockedTakes) ? prog.unlockedTakes.length : 0;
@@ -669,6 +773,8 @@ export function createUI(ctx, rootEl) {
     if (titleEl) titleEl.textContent = act?.title || 'Action!';
   }
 
+  let lastLogActId = 0;
+
   function syncDialogueLogModal(state) {
     if (!dialogueLogModalEl) return;
     const open = state?.modal === 'dialogue_log';
@@ -680,21 +786,65 @@ export function createUI(ctx, rootEl) {
     const act = getAct(actId);
     const heading = dialogueLogModalEl.querySelector('#dlg-log-heading');
     const body = dialogueLogModalEl.querySelector('#dlg-log-body');
+    const footerEl = dialogueLogModalEl.querySelector('#dlg-log-footer');
+    const btnCutscene = dialogueLogModalEl.querySelector('#btn-log-replay-cutscene');
+
     if (heading) {
       heading.textContent = `\uD83D\uDCDC Act ${actId}: ${act?.title || 'Scene'} — Script Log`;
     }
-    if (body) {
+
+    const canReplayCutscene = state?.phase === 'blocking' || state?.phase === 'take_result';
+    if (footerEl) {
+      footerEl.hidden = !canReplayCutscene;
+      footerEl.classList.toggle('is-hidden', !canReplayCutscene);
+    }
+    if (btnCutscene) {
+      btnCutscene.hidden = !canReplayCutscene;
+      btnCutscene.disabled = !canReplayCutscene;
+      btnCutscene.classList.toggle('is-hidden', !canReplayCutscene);
+    }
+
+    if (body && (actId !== lastLogActId || body.children.length === 0)) {
+      lastLogActId = actId;
       const lines = Array.isArray(act?.dialogue) ? act.dialogue : [];
       body.innerHTML = lines
-        .map(
-          (l) => `
-          <div class="log-line-item">
-            <div class="log-line-speaker">${escapeHtml(l.speakerName || l.speaker || 'Cast')}</div>
-            <div class="log-line-text">${escapeHtml(l.text || '')}</div>
+        .map((l) => {
+          const speakerLabel = escapeHtml(l.speakerName || l.speaker || 'Cast');
+          const voIdAttr = escapeHtml(l.voId || '');
+          return `
+          <div class="log-line-item log-line-row" data-vo-row="${voIdAttr}">
+            <div class="log-line-copy">
+              <div class="log-line-speaker">${speakerLabel}</div>
+              <div class="log-line-text">${escapeHtml(l.text || '')}</div>
+            </div>
+            ${
+              l.voId
+                ? `<button type="button" class="sauin-btn btn-icon-pill btn-log-replay btn-replay-accent" data-vo-id="${voIdAttr}" aria-label="Replay ${speakerLabel} voice line"><span>\uD83D\uDD0A</span></button>`
+                : ''
+            }
           </div>
-        `
-        )
+        `;
+        })
         .join('');
+
+      for (const rBtn of body.querySelectorAll('.btn-log-replay')) {
+        bindTap(rBtn, () => {
+          unlockAudio();
+          const voId = rBtn.getAttribute('data-vo-id');
+          if (!voId) return;
+          if (ctx.state?.feedback) {
+            ctx.state.feedback.taps = (Number(ctx.state.feedback.taps) || 0) + 1;
+          }
+          ctx.audio?.setMuted?.({ vo: false });
+          ctx.persistence?.saveAudio?.({ voMuted: false });
+          if (typeof ctx.audio?.playVO === 'function') {
+            ctx.audio.playVO(voId, { force: true, unmute: true });
+          } else {
+            ctx.events?.emit?.('voPlay', { voId, force: true, unmute: true });
+          }
+          requestSync();
+        });
+      }
     }
   }
 
@@ -769,6 +919,7 @@ export function createUI(ctx, rootEl) {
     }
 
     captionsHud?.sync();
+    syncSpeakingIndicators(s, false);
   }
 
   return {

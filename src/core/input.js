@@ -343,7 +343,8 @@ export function createInput(ctx) {
     const tag = e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '';
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
 
-    unlockAudioFromGesture(true);
+    const isReplayKey = e.key === 'r' || e.key === 'R';
+    unlockAudioFromGesture(!isReplayKey);
 
     if (e.key === 'Escape') {
       if (ctx.state.modal !== null) {
@@ -356,6 +357,21 @@ export function createInput(ctx) {
           ctx.events.emit('modalClosed', { modal: closingModal });
         }
         ctx.state.feedback.taps += 1;
+        ctx.ui?.sync?.(ctx.state);
+      }
+      return;
+    }
+
+    if (isReplayKey) {
+      const m = ctx.state.modal;
+      if (m === null || m === 'log' || m === 'dialogue_log' || m === 'album') {
+        e.preventDefault();
+        markFirstAction();
+        ctx.state.feedback.taps += 1;
+        ctx.mechanics?.replayCurrent?.();
+        if (ctx.audio?.getAudioStats?.()?.voMuted === false) {
+          ctx.persistence?.saveAudio?.({ voMuted: false });
+        }
         ctx.ui?.sync?.(ctx.state);
       }
       return;

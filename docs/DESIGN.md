@@ -181,7 +181,7 @@ ctx = {
 - **`ui-hud`**:
   - `createUI(ctx, rootEl)` returns `{ init(), sync(state), showCaption({speaker, text, voId, durationMs}), clearCaption(), openModal(name), closeModal(), showToast(text) }`.
 - **`audio-vo`**:
-  - `createAudioEngine(ctx)` returns `{ init(), unlock(), playVO(voId, opts) -> Promise<boolean>, stopVO(), playSFX(name, opts), setBGM(playing), setMuted({bgm, vo, sfx}), update(dt), getAudioStats() }`.
+  - `createAudioEngine(ctx)` returns `{ init(), unlock(), playVO(voId, opts) -> Promise<boolean>, replayLastVO(opts) -> Promise<boolean>, stopVO(), playSFX(name, opts), setBGM(playing), setMuted({bgm, vo, sfx}), update(dt), getAudioStats() }`.
 
 ### 4.5 Frozen Test & Automation Seam (`window.__HALLOWEEN__`)
 `src/core/seam.js` exposes `Object.freeze(window.__HALLOWEEN__)`:
@@ -189,9 +189,10 @@ ctx = {
 - `resetLevel()` — clears current Act slots (or triggers `reshoot()` if in `take_result`) so the current Act is ready in `blocking`.
 - `act(type, payload)` — deterministic command dispatcher supporting:
   - `'startGame'` (`{seed?, skipDialogue?}`)
-  - `'advanceDialogue'`, `'skipDialogue'`
+  - `'advanceDialogue'`, `'prevDialogue'`, `'replayDialogue'`, `'skipDialogue'`
   - `'cast'` (`{actorId?, propId?}` or `{slotKind, itemId}`)
-  - `'rollCamera'`, `'reshoot'`, `'nextAct'`, `'revealEnding'`
+  - `'rollCamera'`, `'reshoot'`, `'nextAct'`, `'revealEnding'`, `'replayEnding'`
+  - `'replay'` / `'replayTake'` (context-aware 1-tap voiceover & stage choreography replay, also bound to keyboard **`R`** and dedicated Replay buttons across Title `#btn-title-replay`, Cutscene `#btn-dialogue-replay` + `#btn-dialogue-prev`, Top Bar `#btn-top-replay`, Stage HUD `#btn-reel-replay`, Dialogue Log `.btn-log-replay` + `#btn-log-replay-cutscene`, Take Result `#btn-take-replay`, Ending `#btn-ending-replay`, and Film Album `[data-replay-vo]`)
   - `'jumpToAct'` (`{actId, skipDialogue?}`)
   - `'openModal'` (`{modal}`), `'closeModal'`
   - `'claimCommission'` (`{id}`), `'claimAll'`
@@ -203,7 +204,7 @@ ctx = {
 - `getLevels()` — deep-cloned `{ acts: ACTS, takes: TAKES, endings: ENDINGS, recipes: RECIPES, commissions: COMMISSIONS }`.
 - `solveCurrentLevel(strategy)` — if `strategy` is `'END1'..'END5'`, plays all remaining Acts from `state.actId..5` using `RECIPES[strategy]` through `revealEnding()`; otherwise completes the current Act (`skipDialogue` → `cast` → `rollCamera` → `stepFrames(200)`) and returns `getState()`.
 - `playVO(voId, opts)` — triggers `audio.playVO(voId, opts)` and returns `{ ok, voId, durationMs, speaker, text }`.
-- `getAudioStats()` — returns `{ unlocked, bgmPlaying, bgmDucked, bgmGain, bgmMuted, voMuted, sfxMuted, activeVoId, activeCaption, manifestLoaded, clipsTotal, clipsVerified, voPlayedIds: [...], sfxPlayedCount, speechSynthesisUsed: false }`.
+- `getAudioStats()` — returns `{ unlocked, bgmPlaying, bgmDucked, bgmGain, bgmMuted, voMuted, sfxMuted, activeVoId, lastVoId, activeCaption, manifestLoaded, clipsTotal, clipsVerified, voPlayedIds: [...], sfxPlayedCount, speechSynthesisUsed: false }`.
 - `perf()` — returns `{ fps, p50ms, p95ms, drawCalls, triangles, geometries, textures }`.
 
 ---
@@ -456,7 +457,7 @@ Enforced automatically by `qa-e2e` in `tests/sim_gates.py` (using `tests/cdp.py`
 | **G8 — All 8 Studio Commissions & Persistence** | Completing `20/20` takes + `5/5` endings unlocks all 8 commissions totaling **`oroberyl === 300`** and **`tCreds === 40000`**, and reloading the page restores `unlockedTakes`, `unlockedEndings`, and `oroberyl` from `localStorage`. |
 | **G9 — 100% English Localization (`Zero Hanzi`)** | Across Title, all 5 Act Cutscenes, Blocking UI, all 20 Take Cards, all 5 Ending Screens, Film Album, and Rewards Modal, regex `[\u4e00-\u9fff]` count across visible DOM text + `<canvas>` label registries is **`hanziCount === 0`**, and `document.documentElement.lang === 'en'`. |
 | **G10 — 100% Neural English VO Integrity (`52/52`)** | `assets/vo/manifest.json` loads HTTP `200` with **`52` entries**; every `assets/vo/<id>.mp3` returns HTTP `200`, `size > 4000` bytes, `durationMs >= 400`; `speechSynthesisUsed === false`. |
-| **G11 — VO Caption Sync & BGM Auto-Ducking** | Triggering `playVO` across cutscene, take, and ending clips updates the visible English caption banner to match `manifest[id].text`, sets `bgmDucked === true` (`bgmGain <= 0.40`) during playback, and restores `bgmGain` after completion. |
+| **G11 — VO Caption Sync, BGM Auto-Ducking & Replay Surfaces** | Triggering `playVO` and all 9 Replay controls (`#btn-title-replay`, `#btn-dialogue-replay` + `#btn-dialogue-prev`, `#btn-top-replay`, Dialogue Log `.btn-log-replay` + `#btn-log-replay-cutscene`, `#btn-reel-replay`, `#btn-take-replay`, `#btn-ending-replay`, Film Album `[data-replay-vo]`, keyboard `R`, and `10×` burst) restarts clips cleanly from `0.00s` (auto-unmuting on explicit replay tap, zero dual-audio overlap, live `.is-speaking` pulse), updates the English caption banner, sets `bgmDucked === true` (`bgmGain <= 0.40`), and restores `bgmGain` after completion. |
 | **G12 — 60 Hz Seeded Determinism** | Two fresh runs with identical `seed` and identical command trace produce byte-for-byte identical `getState()` JSON snapshots after `600` frames (`3/3` seeds). |
-| **G13 — 4-Viewport Responsive Layout** | At `1280×800`, `1024×768`, `844×390`, and `390×844`: `scrollWidth <= innerWidth`, `scrollHeight <= innerHeight`, zero overlapping interactive button rects, all primary buttons within viewport bounds. |
+| **G13 — 5-Viewport Responsive Layout (`50/50`)** | At `1280×800`, `1024×768`, `768×1024` (iPad portrait), `844×390`, and `390×844` across all 10 core screens/modals: `scrollWidth <= innerWidth`, `scrollHeight <= innerHeight`, zero overlapping interactive button/HUD rects, zero clipped labels/punchlines, and all primary & Replay CTAs within viewport bounds. |
 | **G14 — Render Performance & Memory Stability** | At `1280×800`, frame step `p95 <= 20 ms` (or `<= 2×` headless SwiftShader empty-scene baseline), `drawCalls <= 80`, `triangles <= 60000`, and `geometries`/`textures` count stable (`±5%`) across 10 consecutive reshoots. |

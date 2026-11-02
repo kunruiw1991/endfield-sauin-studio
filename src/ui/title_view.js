@@ -47,6 +47,9 @@ export function createTitleView(ctx, rootEl, bindTap, helpers) {
         <button type="button" id="btn-title-rewards" class="sauin-btn btn-ticket" data-action="open-rewards">
           <span>\uD83C\uDF81 Studio Rewards (0/8)</span>
         </button>
+        <button type="button" id="btn-title-replay" class="sauin-btn btn-ticket btn-replay-accent" data-action="replay-intro" aria-label="Replay Welcome Voiceover">
+          <span>\uD83D\uDD0A Replay Intro</span>
+        </button>
       </div>
 
       <div class="title-primary-row">
@@ -60,6 +63,7 @@ export function createTitleView(ctx, rootEl, bindTap, helpers) {
   const btnStart = el.querySelector('#btn-start-filming');
   const btnAlbum = el.querySelector('#btn-title-album');
   const btnRewards = el.querySelector('#btn-title-rewards');
+  const btnReplay = el.querySelector('#btn-title-replay');
 
   bindTap(btnStart, () => {
     helpers.unlockAudio();
@@ -78,6 +82,22 @@ export function createTitleView(ctx, rootEl, bindTap, helpers) {
     helpers.unlockAudio();
     ctx.events?.emit?.('sfx', { name: 'ui_click', vol: 0.65 });
     helpers.openModal('rewards');
+  });
+
+  bindTap(btnReplay, () => {
+    helpers.unlockAudio();
+    if (ctx.state?.feedback) {
+      ctx.state.feedback.taps = (Number(ctx.state.feedback.taps) || 0) + 1;
+    }
+    ctx.audio?.setMuted?.({ vo: false });
+    ctx.persistence?.saveAudio?.({ voMuted: false });
+    ctx.events?.emit?.('sfx', { name: 'ui_click', vol: 0.6 });
+    if (typeof ctx.audio?.playVO === 'function') {
+      ctx.audio.playVO('vo_title_welcome', { force: true, unmute: true });
+    } else {
+      ctx.events?.emit?.('voPlay', { voId: 'vo_title_welcome', force: true, unmute: true });
+    }
+    helpers.requestSync();
   });
 
   let lastAlbumLabel = '';

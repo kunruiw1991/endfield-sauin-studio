@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from cdp import Browser, ROOT  # noqa: E402
 
-QA_DIR = '/tmp/bv13d_halloween/qa'
+QA_DIR = os.environ.get('HALLOWEEN_QA_DIR', '/tmp/bv13d_replay/qa')
 
 REQUIRED_SEAM_METHODS = [
     'startLevel',

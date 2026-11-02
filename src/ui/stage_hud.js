@@ -61,7 +61,7 @@ export function createStageHud(ctx, workspaceEl, bindTap, helpers) {
     </div>
     <button type="button" id="btn-reel-replay" class="sauin-btn" data-action="reel-replay" title="Replay Pre-Shoot Cutscene">
       <span class="top-btn-full">\uD83C\uDFA5 Reel Replay</span>
-      <span class="top-btn-short">\uD83C\uDFA5 Replay</span>
+      <span class="top-btn-short">\uD83C\uDFA5 Cutscene</span>
     </button>
   `;
 
@@ -146,11 +146,13 @@ export function createStageHud(ctx, workspaceEl, bindTap, helpers) {
 
   bindTap(btnReplay, () => {
     helpers.unlockAudio();
+    ctx.audio?.setMuted?.({ vo: false });
+    ctx.persistence?.saveAudio?.({ voMuted: false });
     ctx.events?.emit?.('sfx', { name: 'ui_click', vol: 0.65 });
     const st = ctx.state;
     if (!st) return;
     if (st.phase === 'take_result' && st.currentTake?.takeId && typeof ctx.mechanics?.replayTake === 'function') {
-      ctx.mechanics.replayTake(st.currentTake.takeId);
+      ctx.mechanics.replayTake(st.currentTake.takeId, { unmute: true });
     } else if (typeof ctx.mechanics?.replayCutscene === 'function' && (st.phase === 'blocking' || st.phase === 'take_result')) {
       ctx.mechanics.replayCutscene();
     } else {

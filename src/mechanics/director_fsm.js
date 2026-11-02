@@ -56,6 +56,23 @@ export function createMechanics(ctx) {
     ctx?.events?.emit?.(type, payload);
   }
 
+  function emitReplayVo(voId, { force = true, unmute = true } = {}) {
+    if (!voId) return false;
+    const shouldUnmute = Boolean(unmute);
+    if (shouldUnmute) {
+      ctx.audio?.unlock?.();
+      if (ctx.audio?.getAudioStats?.()?.voMuted) {
+        ctx.audio?.setMuted?.({ vo: false });
+      }
+    }
+    emit('voPlay', {
+      voId,
+      force: Boolean(force),
+      unmute: shouldUnmute,
+    });
+    return true;
+  }
+
   function recordInteraction(kind = 'ui', x = 0, y = 0) {
     const fb = ctx.state.feedback;
     if (fb.firstActionMs === null) {
@@ -370,6 +387,86 @@ export function createMechanics(ctx) {
     return true;
   }
 
+  function replayDialogueLine(opts = {}) {
+    if (ctx.state.phase !== PHASES.DIALOGUE) {
+      recordInteraction('blocked', 0, 0);
+      emit('sfx', { name: 'ui_click', pitch: 0.78 });
+      return false;
+    }
+
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const preservedIdx = Math.max(0, Math.floor(Number(ctx.state.dialogue?.index) || 0));
+    const existingVoId = ctx.state.dialogue?.voId || null;
+    const act = resolveActRecord(ctx, ctx.state.actId);
+    const rawLine = Array.isArray(act?.dialogue) ? act.dialogue[preservedIdx] : null;
+    const normalizedLine = rawLine ? normalizeDialogueLine(ctx, rawLine, preservedIdx) : null;
+    const voId = existingVoId || normalizedLine?.voId || null;
+
+    if (ctx.state.dialogue) {
+      ctx.state.dialogue.index = preservedIdx;
+      if (voId && !ctx.state.dialogue.voId) {
+        ctx.state.dialogue.voId = voId;
+      }
+    }
+
+    recordInteraction('ui', 0, 0);
+    emit('sfx', { name: 'ui_click' });
+
+    const speakerId =
+      ctx.state.dialogue?.speakerId || normalizedLine?.speakerId || 'sarkaz_director';
+    const portraitMood =
+      ctx.state.dialogue?.portraitMood || normalizedLine?.portraitMood || 'neutral';
+    ctx.render?.setDialogueSpeaker?.(speakerId, portraitMood);
+
+    emit('dialogueReplay', {
+      actId: ctx.state.actId,
+      index: preservedIdx,
+      total: ctx.state.dialogue?.total || (Array.isArray(act?.dialogue) ? act.dialogue.length : 0),
+      line: normalizedLine || (ctx.state.dialogue ? { ...ctx.state.dialogue } : null),
+      voId,
+    });
+
+    if (voId) {
+      emitReplayVo(voId, { force: true, unmute: options.unmute !== false });
+    }
+    return true;
+  }
+
+  function prevDialogue() {
+    if (ctx.state.phase !== PHASES.DIALOGUE) {
+      recordInteraction('blocked', 0, 0);
+      emit('sfx', { name: 'ui_click', pitch: 0.78 });
+      return false;
+    }
+
+    const curIdx = Math.floor(Number(ctx.state.dialogue?.index) || 0);
+    if (curIdx <= 0) {
+      recordInteraction('blocked', 0, 0);
+      emit('sfx', { name: 'ui_click', pitch: 0.78 });
+      return false;
+    }
+
+    const prevIdx = curIdx - 1;
+    recordInteraction('ui', 0, 0);
+    emit('sfx', { name: 'ui_click' });
+
+    const applied = populateDialoguePreview(ctx.state.actId, prevIdx);
+    if (applied) {
+      ctx.render?.setDialogueSpeaker?.(applied.line.speakerId, applied.line.portraitMood);
+      emit('dialogueStep', {
+        actId: ctx.state.actId,
+        index: prevIdx,
+        total: applied.total,
+        line: applied.line,
+        voId: applied.line.voId,
+      });
+      if (applied.line.voId) {
+        emit('voPlay', { voId: applied.line.voId, force: true });
+      }
+    }
+    return true;
+  }
+
   function completeRolledTake(take) {
     const isNewTake = commissions.recordTake(take.takeId);
     const totals = moodEngine.commitActTake(ctx.state.actId, take);
@@ -654,12 +751,19 @@ export function createMechanics(ctx) {
     return true;
   }
 
-  function replayTake(takeId) {
+  function replayTake(takeId = null, opts = {}) {
+    let argId = takeId;
+    let options = opts && typeof opts === 'object' ? opts : {};
+    if (takeId && typeof takeId === 'object') {
+      options = takeId;
+      argId = options.takeId || null;
+    }
+
     const fallbackId =
       ctx.state.currentTake?.takeId ||
       ctx.state.actChoices?.[ctx.state.actId]?.takeId ||
       null;
-    const resolvedId = takeId || fallbackId;
+    const resolvedId = argId || fallbackId;
     const take = resolvedId
       ? ctx?.levels?.TAKES?.[resolvedId] || getTakeById(resolvedId)
       : null;
@@ -683,7 +787,136 @@ export function createMechanics(ctx) {
     }
 
     if (take.voId) {
-      emit('voPlay', { voId: take.voId, force: true });
+      emitReplayVo(take.voId, {
+        force: true,
+        unmute: options.unmute !== false,
+      });
+    }
+    return true;
+  }
+
+  function replayEnding(opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const currentEnding = ctx.state.currentEnding;
+    const voId =
+      currentEnding?.voId ||
+      (currentEnding?.endingId && ctx?.levels?.ENDINGS?.[currentEnding.endingId]?.voId) ||
+      null;
+
+    if (ctx.state.phase !== PHASES.ENDING || !voId) {
+      recordInteraction('blocked', 0, 0);
+      emit('sfx', { name: 'ui_click', pitch: 0.75 });
+      return false;
+    }
+
+    recordInteraction('ui', 0, 0);
+    emit('sfx', { name: 'ui_click' });
+
+    const endingId = currentEnding?.endingId || 'END1';
+    const endingParticleKind =
+      endingId === 'END2' ? 'hearts' : endingId === 'END4' ? 'stars' : 'confetti';
+    choreo.burstParticles(endingParticleKind, { x: 0, y: 1.1, z: 0.1 }, 20);
+
+    emitReplayVo(voId, {
+      force: true,
+      unmute: options.unmute !== false,
+    });
+    return true;
+  }
+
+  function replayCurrent(opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const shouldUnmute = options.unmute !== false;
+    const phase = ctx.state.phase;
+
+    if (ctx.state.modal !== null) {
+      recordInteraction('ui', 0, 0);
+      emit('sfx', { name: 'ui_click' });
+      const stats = ctx.audio?.getAudioStats?.() || {};
+      const candidateVo = options.voId || stats.activeVoId || stats.lastVoId || null;
+
+      if (candidateVo && typeof ctx.audio?.replayLastVO === 'function') {
+        if (shouldUnmute) {
+          ctx.audio?.unlock?.();
+          if (stats.voMuted) {
+            ctx.audio?.setMuted?.({ vo: false });
+          }
+        }
+        ctx.audio.replayLastVO({ ...options, unmute: shouldUnmute });
+        return true;
+      }
+
+      const fallbackModalVo =
+        candidateVo ||
+        (phase === PHASES.TITLE
+          ? 'vo_title_welcome'
+          : ctx.state.modal === 'album'
+            ? 'vo_album_open'
+            : ctx.state.currentTake?.voId ||
+              ctx.state.currentEnding?.voId ||
+              ctx.state.dialogue?.voId ||
+              'vo_title_welcome');
+
+      if (typeof ctx.audio?.playVO === 'function') {
+        if (shouldUnmute) {
+          ctx.audio?.unlock?.();
+          if (stats.voMuted) {
+            ctx.audio?.setMuted?.({ vo: false });
+          }
+        }
+        ctx.audio.playVO(fallbackModalVo, { force: true, unmute: shouldUnmute });
+      } else {
+        emitReplayVo(fallbackModalVo, { force: true, unmute: shouldUnmute });
+      }
+      return true;
+    }
+
+    if (phase === PHASES.DIALOGUE) {
+      return replayDialogueLine({ unmute: shouldUnmute });
+    }
+
+    if (phase === PHASES.TAKE_RESULT) {
+      return replayTake(null, { ...options, unmute: shouldUnmute });
+    }
+
+    if (phase === PHASES.ENDING) {
+      return replayEnding({ unmute: shouldUnmute });
+    }
+
+    if (phase === PHASES.TITLE) {
+      recordInteraction('ui', 0, 0);
+      emit('sfx', { name: 'ui_click' });
+      const stats = ctx.audio?.getAudioStats?.() || {};
+      const targetVoId = stats.lastVoId || 'vo_title_welcome';
+      if (typeof ctx.audio?.playVO === 'function') {
+        if (shouldUnmute) {
+          ctx.audio?.unlock?.();
+          if (stats.voMuted) {
+            ctx.audio?.setMuted?.({ vo: false });
+          }
+        }
+        ctx.audio.playVO(targetVoId, { force: true, unmute: shouldUnmute });
+      } else {
+        emitReplayVo(targetVoId, { force: true, unmute: shouldUnmute });
+      }
+      return true;
+    }
+
+    // blocking, clapper, rolling
+    recordInteraction('ui', 0, 0);
+    emit('sfx', { name: 'ui_click' });
+    const stats = ctx.audio?.getAudioStats?.() || {};
+    const targetVoId = stats.lastVoId || 'vo_tut_cast';
+    if (typeof ctx.audio?.playVO === 'function') {
+      if (shouldUnmute) {
+        ctx.audio?.unlock?.();
+        if (stats.voMuted) {
+          ctx.audio?.setMuted?.({ vo: false });
+        }
+      }
+      ctx.audio.playVO(targetVoId, { force: true, unmute: shouldUnmute });
+    } else {
+      emitReplayVo(targetVoId, { force: true, unmute: shouldUnmute });
     }
     return true;
   }
@@ -699,6 +932,8 @@ export function createMechanics(ctx) {
     jumpToAct,
     returnToTitle,
     advanceDialogue,
+    prevDialogue,
+    replayDialogueLine,
     skipDialogue,
     replayCutscene,
     selectTab: casting.selectTab,
@@ -712,6 +947,7 @@ export function createMechanics(ctx) {
     reshoot,
     nextAct,
     revealEnding,
+    replayEnding,
     triggerStageGag,
     claimCommission: commissions.claimCommission,
     claimAllReady: commissions.claimAllReady,
@@ -720,6 +956,7 @@ export function createMechanics(ctx) {
     solveCurrentAct: solver.solveCurrentAct,
     solveRunForEnding: solver.solveRunForEnding,
     replayTake,
+    replayCurrent,
     update,
   };
 

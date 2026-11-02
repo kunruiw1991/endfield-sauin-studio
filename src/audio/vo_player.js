@@ -457,6 +457,7 @@ export function createVoPlayer({ getContext, isUnlocked, events, onDuckChange })
   let simTimeMs = 0;
   let playToken = 0;
   let active = null; // { token, voId, speaker, text, priority, durationMs, remainingMs }
+  let lastVoId = null;
 
   const lastPlayedAt = new Map(); // voId -> { simMs, wallMs }
   const playedIds = [];
@@ -598,7 +599,11 @@ export function createVoPlayer({ getContext, isUnlocked, events, onDuckChange })
     }
 
     const force = Boolean(opts && opts.force);
-    if (voMuted && !force) {
+    if (opts && opts.unmute && voMuted) {
+      setMuted(false);
+    }
+    if (voMuted) {
+      lastVoId = voId;
       return Promise.resolve(false);
     }
 
@@ -653,6 +658,7 @@ export function createVoPlayer({ getContext, isUnlocked, events, onDuckChange })
       durationMs,
       remainingMs: durationMs,
     };
+    lastVoId = voId;
 
     lastPlayedAt.set(voId, { simMs: simTimeMs, wallMs });
     if (!playedIdSet.has(voId)) {
@@ -693,8 +699,11 @@ export function createVoPlayer({ getContext, isUnlocked, events, onDuckChange })
         el.volume = voMuted ? 0.0 : 1.0;
         if (el.src !== srcUrl) {
           el.src = srcUrl;
-        } else {
+        }
+        try {
           el.currentTime = 0;
+        } catch (_) {
+          // Ignore seek before metadata ready; fresh src starts at 0.
         }
         const playPromise = el.play();
         if (playPromise && typeof playPromise.catch === 'function') {
@@ -768,10 +777,26 @@ export function createVoPlayer({ getContext, isUnlocked, events, onDuckChange })
     };
   }
 
+  function replayLastVO(opts = {}) {
+    const targetVoId = opts?.voId || (active ? active.voId : null) || lastVoId;
+    if (!targetVoId) {
+      return Promise.resolve(false);
+    }
+    if (opts && opts.unmute && voMuted) {
+      setMuted(false);
+    }
+    return playVO(targetVoId, {
+      force: true,
+      unmute: Boolean(opts?.unmute),
+      priority: opts?.priority,
+    });
+  }
+
   function getStats() {
     return {
       voMuted,
       activeVoId: active ? active.voId : null,
+      lastVoId,
       activeCaption: active ? active.text : null,
       activeSpeaker: active ? active.speaker : null,
       manifestLoaded,
@@ -785,6 +810,7 @@ export function createVoPlayer({ getContext, isUnlocked, events, onDuckChange })
   return {
     init,
     playVO,
+    replayLastVO,
     stopVO,
     setMuted,
     onUnlock,

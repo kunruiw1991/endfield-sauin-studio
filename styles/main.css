@@ -168,6 +168,54 @@ button.sauin-btn.btn-icon-pill {
   font-size: 13px;
 }
 
+button.sauin-btn.btn-replay-accent,
+#title button.sauin-btn.btn-replay-accent {
+  background: linear-gradient(180deg, #8e5c34 0%, #653f21 100%);
+  border-color: #fae2b4;
+  color: #fff8eb;
+}
+
+button.sauin-btn.is-speaking,
+#title button.sauin-btn.is-speaking {
+  border-color: #ffe89e !important;
+  background: linear-gradient(180deg, #b57335 0%, #7d4c22 100%) !important;
+  color: #fffdf5 !important;
+}
+
+button.sauin-btn.is-speaking.vo-pulse-a,
+#title button.sauin-btn.is-speaking.vo-pulse-a {
+  animation: replaySpeakPulseA 0.95s ease-in-out infinite;
+}
+
+button.sauin-btn.is-speaking.vo-pulse-b,
+#title button.sauin-btn.is-speaking.vo-pulse-b {
+  animation: replaySpeakPulseB 0.95s ease-in-out infinite;
+}
+
+@keyframes replaySpeakPulseA {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 214, 102, 0.85), 0 0 14px rgba(255, 190, 72, 0.65);
+  }
+  55% {
+    box-shadow: 0 0 0 5px rgba(255, 214, 102, 0), 0 0 18px rgba(255, 206, 98, 0.82);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 214, 102, 0), 0 0 10px rgba(255, 184, 66, 0.42);
+  }
+}
+
+@keyframes replaySpeakPulseB {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 214, 102, 0.85), 0 0 14px rgba(255, 190, 72, 0.65);
+  }
+  55% {
+    box-shadow: 0 0 0 5px rgba(255, 214, 102, 0), 0 0 18px rgba(255, 206, 98, 0.82);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 214, 102, 0), 0 0 10px rgba(255, 184, 66, 0.42);
+  }
+}
+
 button.sauin-btn.is-muted {
   opacity: 0.72;
   background: linear-gradient(180deg, #43362c 0%, #2f251e 100%);
@@ -221,6 +269,23 @@ button.sauin-btn.is-disabled {
 
 .top-btn-short {
   display: none;
+}
+
+@media (max-width: 1120px) and (min-width: 901px) {
+  #top-bar {
+    gap: 5px;
+  }
+
+  .top-bar-left,
+  .top-bar-right {
+    gap: 5px;
+  }
+
+  #top-bar button.sauin-btn {
+    min-width: 44px;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
 }
 
 /* ==========================================================================
@@ -608,12 +673,29 @@ button.sauin-btn.is-disabled {
   gap: 12px;
 }
 
+.dialogue-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+#btn-dialogue-next {
+  min-width: 96px;
+}
+
 .dialogue-step-counter {
   font-size: 12px;
   font-weight: 700;
   color: #cbb59c;
   letter-spacing: 0.06em;
+  white-space: nowrap;
   pointer-events: none;
+}
+
+.dlg-cnt-short {
+  display: none;
 }
 
 /* ==========================================================================
@@ -1465,20 +1547,30 @@ button.sauin-btn.slot-clear-btn {
   color: #2f1f14;
 }
 
-.take-actions-bottom {
+.take-actions-bottom,
+.take-actions-bottom.take-actions-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.22fr);
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
   pointer-events: none;
 }
 
 .take-actions-bottom button.sauin-btn,
-.take-actions-bottom button.sauin-btn.btn-primary {
+.take-actions-bottom button.sauin-btn.btn-primary,
+.take-actions-bottom button.sauin-btn.btn-ticket {
   width: 100%;
   min-width: 0 !important;
-  padding: 6px 8px;
-  font-size: 13px;
+  min-height: 44px;
+  padding: 5px 5px;
+  font-size: 11.5px;
+  letter-spacing: 0;
+  gap: 4px;
   white-space: nowrap;
+}
+
+#btn-take-next {
+  font-weight: 900;
+  box-shadow: 0 4px 14px rgba(220, 66, 52, 0.46);
 }
 
 /* ==========================================================================
@@ -1646,13 +1738,29 @@ button.sauin-btn.slot-clear-btn {
 
 .ending-buttons-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
   margin-top: 4px;
 }
 
-.ending-buttons-grid button {
+.ending-buttons-grid .ending-btn-half {
+  grid-column: span 3;
+}
+
+.ending-buttons-grid .ending-btn-third {
+  grid-column: span 2;
+}
+
+.ending-buttons-grid button.sauin-btn,
+.ending-buttons-grid button.sauin-btn.btn-primary,
+.ending-buttons-grid button.sauin-btn.btn-ticket {
   width: 100%;
+  min-width: 0 !important;
+  min-height: 44px;
+  padding: 6px 6px;
+  font-size: 12.5px;
+  letter-spacing: 0;
+  gap: 4px;
 }
 
 /* ==========================================================================
@@ -2038,6 +2146,35 @@ button.sauin-btn.slot-clear-btn {
   border-bottom: 1px dashed rgba(92, 67, 46, 0.25);
 }
 
+.log-line-item.log-line-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.log-line-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+button.sauin-btn.btn-log-replay {
+  flex: 0 0 auto;
+  min-width: 46px;
+  min-height: 44px;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.modal-footer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 2px solid rgba(90, 66, 48, 0.22);
+}
+
 .log-line-speaker {
   font-size: 12px;
   font-weight: 900;
@@ -2243,6 +2380,13 @@ a.sauin-btn {
   .top-btn-full { display: none; }
   .top-btn-short { display: inline; }
 
+  #top-bar button.sauin-btn {
+    min-width: 42px;
+    min-height: 44px;
+    padding: 4px 7px;
+    font-size: 12px;
+  }
+
   button.sauin-btn {
     min-height: 44px;
     padding: 4px 10px;
@@ -2283,7 +2427,13 @@ a.sauin-btn {
 
   .title-secondary-row {
     margin: 6px 0;
-    gap: 10px;
+    gap: 8px;
+  }
+
+  .title-secondary-row button {
+    min-height: 44px;
+    padding: 4px 12px;
+    font-size: 12px;
   }
 
   #btn-start-filming {
@@ -2316,6 +2466,22 @@ a.sauin-btn {
     font-size: 13px;
     min-height: 32px;
     margin: 2px 0 6px;
+  }
+
+  .dialogue-footer-actions {
+    gap: 6px;
+  }
+
+  .dialogue-footer-actions button.sauin-btn,
+  .dialogue-footer-actions button.sauin-btn.btn-primary {
+    min-width: 0 !important;
+    min-height: 44px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  #btn-dialogue-next {
+    min-width: 88px !important;
   }
 
   #stage-workspace,
@@ -2420,17 +2586,21 @@ a.sauin-btn {
     font-size: 10px;
   }
 
-  .take-actions-bottom {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.22fr);
-    gap: 6px;
+  .take-actions-bottom,
+  .take-actions-bottom.take-actions-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 5px;
   }
 
   .take-actions-bottom button.sauin-btn,
-  .take-actions-bottom button.sauin-btn.btn-primary {
+  .take-actions-bottom button.sauin-btn.btn-primary,
+  .take-actions-bottom button.sauin-btn.btn-ticket {
     min-width: 0 !important;
     min-height: 44px;
-    padding: 4px 6px;
-    font-size: 11px;
+    padding: 4px 4px;
+    font-size: 10.5px;
+    letter-spacing: 0;
+    gap: 3px;
   }
 
   #ending-view {
@@ -2447,8 +2617,8 @@ a.sauin-btn {
   }
 
   .ending-story-panel {
-    padding: 10px 12px;
-    gap: 6px;
+    padding: 10px 10px;
+    gap: 5px;
   }
 
   .ending-main-title { font-size: 18px; }
@@ -2461,7 +2631,18 @@ a.sauin-btn {
     overflow: hidden;
   }
 
-  .ending-buttons-grid { gap: 6px; }
+  .ending-buttons-grid {
+    gap: 5px;
+    margin-top: 2px;
+  }
+
+  .ending-buttons-grid button.sauin-btn,
+  .ending-buttons-grid button.sauin-btn.btn-primary,
+  .ending-buttons-grid button.sauin-btn.btn-ticket {
+    min-height: 44px;
+    padding: 4px 4px;
+    font-size: 11px;
+  }
 
   /* Modals on 844x390 */
   #modal-layer { padding: 4px 6px; }
@@ -2473,6 +2654,12 @@ a.sauin-btn {
     gap: 5px;
   }
   .modal-header-bar { padding-bottom: 3px; }
+  .modal-footer-bar { padding-top: 3px; }
+  #btn-log-replay-cutscene {
+    min-height: 40px;
+    padding: 4px 12px;
+    font-size: 11.5px;
+  }
   .album-entry-card { padding: 4px 7px; gap: 2px; }
   .album-entry-card.has-thumb,
   .album-entry-card.has-thumb.is-ending-card {
@@ -2525,12 +2712,12 @@ a.sauin-btn {
   }
 
   #captions-hud {
-    left: 62px;
+    left: 56px;
     right: auto;
     top: 4px;
     transform: none;
     width: max-content;
-    max-width: 448px;
+    max-width: 444px;
     padding: 4px 10px;
     border-radius: 10px;
     gap: 6px;
@@ -2548,14 +2735,14 @@ a.sauin-btn {
   #ui-root[data-phase="blocking"]:not(.has-modal) #captions-hud,
   #ui-root[data-phase="rolling"]:not(.has-modal) #captions-hud,
   #ui-root[data-phase="take_result"]:not(.has-modal) #captions-hud {
-    left: 62px;
+    left: 56px;
     top: 4px;
     transform: none;
-    max-width: 448px;
+    max-width: 444px;
   }
 
   #ui-root[data-phase="ending"]:not(.has-modal) #captions-hud {
-    left: 62px;
+    left: 56px;
     top: 4px;
     transform: none;
     max-width: 380px;
@@ -2584,26 +2771,26 @@ a.sauin-btn {
     right: 6px;
     top: 6px;
     height: 44px;
-    gap: 4px;
+    gap: 3px;
   }
 
   .top-bar-left,
   .top-bar-right {
-    gap: 4px;
+    gap: 3px;
   }
 
   .top-btn-full { display: none; }
   .top-btn-short { display: inline; }
 
   #top-bar button.sauin-btn {
-    min-width: 48px;
+    min-width: 41px;
     min-height: 44px;
-    padding: 4px 6px;
+    padding: 4px 5px;
     font-size: 12px;
   }
 
   #title {
-    padding: 58px 14px 20px;
+    padding: 56px 14px 16px;
   }
 
   .title-kicker {
@@ -2627,11 +2814,14 @@ a.sauin-btn {
     flex-direction: column;
     width: 100%;
     max-width: 280px;
-    gap: 10px;
+    gap: 8px;
+    margin: 10px 0;
   }
 
   .title-secondary-row button {
     width: 100%;
+    min-height: 44px;
+    padding: 6px 14px;
   }
 
   #dialogue-layer {
@@ -2654,7 +2844,30 @@ a.sauin-btn {
 
   .dialogue-celluloid-bar {
     width: 100%;
-    padding: 24px 14px 12px 16px;
+    padding: 24px 12px 12px 14px;
+  }
+
+  .dlg-cnt-full { display: none; }
+  .dlg-cnt-short { display: inline; }
+
+  .dialogue-footer-row {
+    gap: 6px;
+  }
+
+  .dialogue-footer-actions {
+    gap: 6px;
+  }
+
+  .dialogue-footer-actions button.sauin-btn,
+  .dialogue-footer-actions button.sauin-btn.btn-primary {
+    min-width: 0 !important;
+    min-height: 44px;
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+
+  #btn-dialogue-next {
+    min-width: 78px !important;
   }
 
   .dialogue-speaker-ribbon {
@@ -2715,7 +2928,7 @@ a.sauin-btn {
 
   #btn-reel-replay {
     width: auto;
-    flex: 0 0 74px;
+    flex: 0 0 88px;
     padding: 4px 6px;
     font-size: 10.5px;
     white-space: nowrap;
@@ -2791,8 +3004,8 @@ a.sauin-btn {
   }
 
   .ending-story-panel {
-    padding: 12px 14px;
-    gap: 8px;
+    padding: 12px 12px;
+    gap: 7px;
   }
 
   .ending-main-title {
@@ -2802,6 +3015,18 @@ a.sauin-btn {
   .ending-story-text {
     font-size: 12px;
     line-height: 1.38;
+  }
+
+  .ending-buttons-grid {
+    gap: 6px;
+  }
+
+  .ending-buttons-grid button.sauin-btn,
+  .ending-buttons-grid button.sauin-btn.btn-primary,
+  .ending-buttons-grid button.sauin-btn.btn-ticket {
+    min-height: 44px;
+    padding: 6px 4px;
+    font-size: 11.5px;
   }
 
   /* Modals on Portrait */
@@ -2969,29 +3194,51 @@ a.sauin-btn {
    ========================================================================== */
 @media (min-width: 661px) and (max-width: 900px) and (orientation: portrait) {
   #top-bar {
-    left: 10px;
-    right: 10px;
+    left: 8px;
+    right: 8px;
     top: 8px;
-    gap: 5px;
+    gap: 4px;
+  }
+
+  .top-bar-left,
+  .top-bar-right {
+    gap: 4px;
   }
 
   .top-btn-full { display: inline; }
   .top-btn-short { display: none; }
 
   #top-bar button.sauin-btn {
-    min-width: 44px;
+    min-width: 0;
     padding: 5px 8px;
-    font-size: 11px;
+    font-size: 11.5px;
+    gap: 3px;
   }
 
   .title-secondary-row {
     flex-direction: row;
-    max-width: 540px;
-    gap: 14px;
+    max-width: 720px;
+    gap: 10px;
+    margin: 14px 0;
   }
 
   .title-secondary-row button {
     width: auto;
+    padding: 7px 14px;
+    font-size: 13px;
+  }
+
+  .dlg-cnt-full { display: inline; }
+  .dlg-cnt-short { display: none; }
+
+  .dialogue-footer-actions button.sauin-btn,
+  .dialogue-footer-actions button.sauin-btn.btn-primary {
+    padding: 6px 14px;
+    font-size: 13.5px;
+  }
+
+  #btn-dialogue-next {
+    min-width: 98px !important;
   }
 
   #dialogue-layer {
@@ -3029,8 +3276,8 @@ a.sauin-btn {
   }
 
   #btn-reel-replay {
-    flex: 0 0 116px;
-    font-size: 12px;
+    flex: 0 0 128px;
+    font-size: 12.5px;
   }
 
   .stage-slot-guide {
@@ -3051,6 +3298,13 @@ a.sauin-btn {
   .script-body-narration {
     font-size: 14px;
     line-height: 1.44;
+  }
+
+  .take-actions-bottom button.sauin-btn,
+  .take-actions-bottom button.sauin-btn.btn-primary,
+  .take-actions-bottom button.sauin-btn.btn-ticket {
+    font-size: 13px;
+    padding: 7px 12px;
   }
 
   #ending-view {
@@ -3089,6 +3343,13 @@ a.sauin-btn {
   .ending-story-text {
     font-size: 14px;
     line-height: 1.48;
+  }
+
+  .ending-buttons-grid button.sauin-btn,
+  .ending-buttons-grid button.sauin-btn.btn-primary,
+  .ending-buttons-grid button.sauin-btn.btn-ticket {
+    font-size: 13px;
+    padding: 7px 10px;
   }
 
   .sauin-modal-card {

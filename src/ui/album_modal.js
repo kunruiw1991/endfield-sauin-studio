@@ -71,7 +71,7 @@ export function createAlbumModal(ctx, modalMountEl, bindTap, helpers) {
       ctx.events?.emit?.('sfx', { name: 'tab_flip', vol: 0.55 });
       currentTab = btn.getAttribute('data-album-tab') || '1';
       lastRenderSig = '';
-      sync(ctx.state);
+      helpers.requestSync();
     });
   }
 
@@ -82,11 +82,14 @@ export function createAlbumModal(ctx, modalMountEl, bindTap, helpers) {
         helpers.unlockAudio();
         const voId = btn.getAttribute('data-replay-vo');
         if (voId) {
+          ctx.audio?.setMuted?.({ vo: false });
+          ctx.persistence?.saveAudio?.({ voMuted: false });
           if (typeof ctx.audio?.playVO === 'function') {
-            ctx.audio.playVO(voId, { force: true });
+            ctx.audio.playVO(voId, { force: true, unmute: true });
           } else {
-            ctx.events?.emit?.('voPlay', { voId, force: true });
+            ctx.events?.emit?.('voPlay', { voId, force: true, unmute: true });
           }
+          helpers.requestSync();
         }
       });
     }

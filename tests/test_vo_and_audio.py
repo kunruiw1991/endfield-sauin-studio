@@ -190,6 +190,388 @@ READ_CAPTION_AND_AUDIO_JS = r"""
 })()
 """
 
+FIND_VISIBLE_BTN_JS = r"""
+((selector) => {
+  const isVis = (el) => {
+    if (!el || !(el instanceof Element)) return false;
+    if (el.hasAttribute('hidden') || el.disabled) return false;
+    let cur = el;
+    while (cur && cur !== document.documentElement) {
+      if (cur.hasAttribute && cur.hasAttribute('hidden')) return false;
+      const cs = window.getComputedStyle(cur);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity || '1') <= 0.05) {
+        return false;
+      }
+      cur = cur.parentElement;
+    }
+    const r = el.getBoundingClientRect();
+    return r.width > 12 && r.height > 12;
+  };
+  const el = Array.from(document.querySelectorAll(selector)).find(isVis);
+  if (!el) return { found: false };
+  const r = el.getBoundingClientRect();
+  return {
+    found: true,
+    id: el.id || '',
+    cx: Math.round((r.left + r.width / 2) * 10) / 10,
+    cy: Math.round((r.top + r.height / 2) * 10) / 10,
+    voId: (el.dataset && (el.dataset.voId || el.dataset.replayVo)) || '',
+    isMutedClass: el.classList.contains('is-muted'),
+    text: (el.textContent || '').trim().replace(/\s+/g, ' '),
+  };
+})
+"""
+
+
+def _find_btn(b: Browser, selector: str) -> dict[str, Any]:
+  return b.eval(f'({FIND_VISIBLE_BTN_JS})({json.dumps(selector)})', await_promise=False) or {'found': False}
+
+
+def _press_key_r(b: Browser) -> None:
+  b.cmd(
+      'Input.dispatchKeyEvent',
+      type='keyDown',
+      key='r',
+      code='KeyR',
+      text='r',
+      unmodifiedText='r',
+      windowsVirtualKeyCode=82,
+      nativeVirtualKeyCode=82,
+  )
+  b.cmd(
+      'Input.dispatchKeyEvent',
+      type='keyUp',
+      key='r',
+      code='KeyR',
+      windowsVirtualKeyCode=82,
+      nativeVirtualKeyCode=82,
+  )
+
+
+def _verify_replay_controls_e2e(b: Browser) -> tuple[list[str], dict[str, Any]]:
+  """E2E verification of all 1-tap Replay buttons & keyboard shortcut R across every screen."""
+  failures: list[str] = []
+  details: dict[str, Any] = {}
+
+  # 1. Return to Title via #btn-back-title and test #btn-title-replay + auto-unmute
+  back_btn = _find_btn(b, '#btn-back-title')
+  if back_btn.get('found'):
+    time.sleep(0.32)
+    b.tap(back_btn['cx'], back_btn['cy'])
+    time.sleep(0.15)
+    b.eval('window.__HALLOWEEN__.stepFrames(20)', await_promise=False)
+  else:
+    b.goto('index.html', timeout=15)
+    time.sleep(0.15)
+
+  vo_mute_btn = _find_btn(b, '#btn-title-vo, #btn-toggle-vo')
+  if vo_mute_btn.get('found'):
+    au_pre = b.eval('window.__HALLOWEEN__.getAudioStats()', await_promise=False) or {}
+    if not au_pre.get('voMuted'):
+      time.sleep(0.32)
+      b.tap(vo_mute_btn['cx'], vo_mute_btn['cy'])
+      time.sleep(0.12)
+
+  title_replay = _find_btn(b, '#btn-title-replay')
+  if not title_replay.get('found'):
+    failures.append('@ui-hud: Missing visible #btn-title-replay on Title screen')
+  else:
+    time.sleep(0.32)
+    b.tap(title_replay['cx'], title_replay['cy'])
+    time.sleep(0.16)
+    b.eval('window.__HALLOWEEN__.stepFrames(10)', await_promise=False)
+    st_title = b.eval('({ st: window.__HALLOWEEN__.getState(), au: window.__HALLOWEEN__.getAudioStats(), titleVoMutedClass: Boolean(document.querySelector("#btn-title-vo")?.classList.contains("is-muted")), topVoMutedClass: Boolean(document.querySelector("#btn-toggle-vo")?.classList.contains("is-muted")), isSpeaking: Boolean(document.querySelector("#btn-title-replay")?.classList.contains("is-speaking")) })', await_promise=False)
+    au_t = st_title.get('au') or {}
+    details['titleReplay'] = {
+        'activeVoId': au_t.get('activeVoId'),
+        'lastVoId': au_t.get('lastVoId'),
+        'voMuted': au_t.get('voMuted'),
+        'isSpeaking': st_title.get('isSpeaking'),
+    }
+    if not st_title.get('isSpeaking'):
+      failures.append('@ui-hud: #btn-title-replay missing .is-speaking visual pulse during active VO')
+    if au_t.get('voMuted') is not False:
+      failures.append(f'@audio-vo/@ui-hud: Tapping #btn-title-replay did not auto-unmute VO (voMuted={au_t.get("voMuted")})')
+    if st_title.get('titleVoMutedClass') or st_title.get('topVoMutedClass'):
+      failures.append('@ui-hud: VO toggle pill remained .is-muted after #btn-title-replay auto-unmuted VO')
+    if au_t.get('activeVoId') != 'vo_title_welcome' or au_t.get('lastVoId') != 'vo_title_welcome':
+      failures.append(
+          f'@audio-vo/@ui-hud: #btn-title-replay expected vo_title_welcome, got active={au_t.get("activeVoId")!r}, last={au_t.get("lastVoId")!r}'
+      )
+
+  # 2. Cutscene Dialogue: #btn-dialogue-replay (must NOT advance line!) + #btn-dialogue-prev + keyboard R
+  b.eval(
+      r"""(() => {
+        const H = window.__HALLOWEEN__;
+        H.startLevel({ act: 1, seed: 20261031, skipDialogue: false, resetMoods: true });
+        H.stepFrames(65);
+      })()""",
+      await_promise=False,
+  )
+  time.sleep(0.15)
+  prev_at_zero = _find_btn(b, '#btn-dialogue-prev')
+  if prev_at_zero.get('found'):
+    failures.append('@ui-hud: #btn-dialogue-prev should be hidden or disabled at dialogue index 0')
+
+  dlg_replay = _find_btn(b, '#btn-dialogue-replay')
+  if not dlg_replay.get('found'):
+    failures.append('@ui-hud: Missing visible #btn-dialogue-replay in Cutscene Dialogue bar')
+  else:
+    time.sleep(0.32)
+    b.tap(dlg_replay['cx'], dlg_replay['cy'])
+    time.sleep(0.15)
+    b.eval('window.__HALLOWEEN__.stepFrames(8)', await_promise=False)
+    st_dlg = b.eval('({ st: window.__HALLOWEEN__.getState(), au: window.__HALLOWEEN__.getAudioStats(), isSpeaking: Boolean(document.querySelector("#btn-dialogue-replay")?.classList.contains("is-speaking")) })', await_promise=False)
+    idx_after_replay = ((st_dlg.get('st') or {}).get('dialogue') or {}).get('index')
+    au_dlg = st_dlg.get('au') or {}
+    details['dialogueReplay'] = {'indexAfterTap': idx_after_replay, 'activeVoId': au_dlg.get('activeVoId'), 'isSpeaking': st_dlg.get('isSpeaking')}
+    if not st_dlg.get('isSpeaking'):
+      failures.append('@ui-hud: #btn-dialogue-replay missing .is-speaking visual pulse during active VO')
+    if (st_dlg.get('st') or {}).get('phase') != 'dialogue' or idx_after_replay != 0:
+      failures.append(
+          f'@ui-hud/@mechanics: Tapping #btn-dialogue-replay advanced or left dialogue! phase={(st_dlg.get("st") or {}).get("phase")!r}, index={idx_after_replay}'
+      )
+    if au_dlg.get('activeVoId') != 'vo_s1_dlg_1':
+      failures.append(f'@audio-vo/@mechanics: #btn-dialogue-replay expected vo_s1_dlg_1, got {au_dlg.get("activeVoId")!r}')
+
+  # Advance to line 1 via #btn-dialogue-next, then step back to line 0 via #btn-dialogue-prev
+  dlg_next = _find_btn(b, '#btn-dialogue-next')
+  if dlg_next.get('found'):
+    time.sleep(0.32)
+    b.tap(dlg_next['cx'], dlg_next['cy'])
+    time.sleep(0.14)
+    b.eval('window.__HALLOWEEN__.stepFrames(8)', await_promise=False)
+    prev_at_one = _find_btn(b, '#btn-dialogue-prev')
+    if not prev_at_one.get('found'):
+      failures.append('@ui-hud: #btn-dialogue-prev was not visible/enabled at dialogue index 1')
+    else:
+      time.sleep(0.32)
+      b.tap(prev_at_one['cx'], prev_at_one['cy'])
+      time.sleep(0.14)
+      b.eval('window.__HALLOWEEN__.stepFrames(8)', await_promise=False)
+      st_prev = b.eval('({ st: window.__HALLOWEEN__.getState(), au: window.__HALLOWEEN__.getAudioStats() })', await_promise=False)
+      idx_prev = ((st_prev.get('st') or {}).get('dialogue') or {}).get('index')
+      au_prev = st_prev.get('au') or {}
+      details['prevDialogue'] = {'indexAfterPrev': idx_prev, 'activeVoId': au_prev.get('activeVoId')}
+      if idx_prev != 0 or au_prev.get('activeVoId') != 'vo_s1_dlg_1':
+        failures.append(f'@mechanics/@ui-hud: #btn-dialogue-prev expected index=0 & vo_s1_dlg_1, got index={idx_prev}, vo={au_prev.get("activeVoId")!r}')
+
+  # Keyboard shortcut 'r' in dialogue (must replay vo_s1_dlg_1 without advancing index!)
+  taps_before_r = int(((b.eval('window.__HALLOWEEN__.getState().feedback', await_promise=False) or {}).get('taps', 0)))
+  _press_key_r(b)
+  time.sleep(0.14)
+  b.eval('window.__HALLOWEEN__.stepFrames(8)', await_promise=False)
+  st_key_r = b.eval('({ st: window.__HALLOWEEN__.getState(), au: window.__HALLOWEEN__.getAudioStats() })', await_promise=False)
+  fb_r = (st_key_r.get('st') or {}).get('feedback') or {}
+  idx_r = ((st_key_r.get('st') or {}).get('dialogue') or {}).get('index')
+  au_r = st_key_r.get('au') or {}
+  details['keyboardR'] = {'tapsDelta': int(fb_r.get('taps', 0)) - taps_before_r, 'index': idx_r, 'activeVoId': au_r.get('activeVoId')}
+  if int(fb_r.get('taps', 0)) <= taps_before_r:
+    failures.append('@core: Pressing keyboard shortcut R did not increment state.feedback.taps')
+  if idx_r != 0 or au_r.get('activeVoId') != 'vo_s1_dlg_1':
+    failures.append(f'@core/@mechanics: Pressing R in dialogue expected index=0 & vo_s1_dlg_1, got index={idx_r}, vo={au_r.get("activeVoId")!r}')
+
+  # 3. Blocking phase: #btn-top-replay + Dialogue Log modal (.btn-log-replay & #btn-log-replay-cutscene)
+  b.eval('window.__HALLOWEEN__.act("skipDialogue"); window.__HALLOWEEN__.stepFrames(25);', await_promise=False)
+  time.sleep(0.12)
+  top_replay = _find_btn(b, '#btn-top-replay')
+  if not top_replay.get('found'):
+    failures.append('@ui-hud: Missing visible #btn-top-replay in #top-bar during blocking')
+  else:
+    time.sleep(0.32)
+    b.tap(top_replay['cx'], top_replay['cy'])
+    time.sleep(0.14)
+    b.eval('window.__HALLOWEEN__.stepFrames(8)', await_promise=False)
+    au_top = b.eval('window.__HALLOWEEN__.getAudioStats()', await_promise=False) or {}
+    details['topBarReplay'] = {'activeVoId': au_top.get('activeVoId'), 'lastVoId': au_top.get('lastVoId')}
+    if not au_top.get('activeVoId'):
+      failures.append(f'@ui-hud/@mechanics: #btn-top-replay in blocking did not trigger VO (au={au_top})')
+
+  log_btn = _find_btn(b, '#btn-dialogue-log')
+  if log_btn.get('found'):
+    time.sleep(0.32)
+    b.tap(log_btn['cx'], log_btn['cy'])
+    time.sleep(0.14)
+    b.eval('window.__HALLOWEEN__.stepFrames(10)', await_promise=False)
+    line_replay = _find_btn(b, '.btn-log-replay')
+    if not line_replay.get('found'):
+      failures.append('@ui-hud: Missing visible .btn-log-replay inside #dialogue-log-modal')
+    else:
+      time.sleep(0.32)
+      b.tap(line_replay['cx'], line_replay['cy'])
+      time.sleep(0.14)
+      b.eval('window.__HALLOWEEN__.stepFrames(8)', await_promise=False)
+      au_log = b.eval('window.__HALLOWEEN__.getAudioStats()', await_promise=False) or {}
+      expected_log_vo = line_replay.get('voId') or 'vo_s1_dlg_1'
+      details['logLineReplay'] = {'expected': expected_log_vo, 'activeVoId': au_log.get('activeVoId')}
+      if au_log.get('activeVoId') != expected_log_vo:
+        failures.append(f'@ui-hud/@audio-vo: .btn-log-replay expected {expected_log_vo!r}, got {au_log.get("activeVoId")!r}')
+
+    cutscene_replay_btn = _find_btn(b, '#btn-log-replay-cutscene')
+    if not cutscene_replay_btn.get('found'):
+      failures.append('@ui-hud: Missing visible #btn-log-replay-cutscene in Dialogue Log modal footer')
+    else:
+      time.sleep(0.32)
+      b.tap(cutscene_replay_btn['cx'], cutscene_replay_btn['cy'])
+      time.sleep(0.15)
+      b.eval('window.__HALLOWEEN__.stepFrames(15)', await_promise=False)
+      st_cut = b.eval('window.__HALLOWEEN__.getState()', await_promise=False) or {}
+      details['logCutsceneReplay'] = {'modal': st_cut.get('modal'), 'phase': st_cut.get('phase')}
+      if st_cut.get('modal') is not None or st_cut.get('phase') != 'dialogue':
+        failures.append(
+            f'@ui-hud/@mechanics: #btn-log-replay-cutscene expected modal=null & phase="dialogue", got modal={st_cut.get("modal")!r}, phase={st_cut.get("phase")!r}'
+        )
+
+  # 4. Take Result Card: #btn-take-replay (restarts 3D take + VO without double-counting moods!)
+  b.eval(
+      r"""(() => {
+        const H = window.__HALLOWEEN__;
+        if (H.getState().modal) H.act('closeModal');
+        if (H.getState().phase === 'dialogue') { H.act('skipDialogue'); H.stepFrames(25); }
+        H.act('cast', { actorId: 'last_rite', propId: 'sarkaz_mask' });
+        H.act('rollCamera');
+        H.stepFrames(220);
+      })()""",
+      await_promise=False,
+  )
+  time.sleep(0.15)
+  pre_take_state = b.eval('window.__HALLOWEEN__.getState()', await_promise=False) or {}
+  moods_pre_take_replay = (pre_take_state.get('moods') or {}).copy()
+  choices_pre_take_replay = dict(pre_take_state.get('actChoices') or {})
+  take_replay = _find_btn(b, '#btn-take-replay')
+  if not take_replay.get('found'):
+    failures.append('@ui-hud: Missing visible #btn-take-replay on Filmed Take Result card')
+  else:
+    time.sleep(0.32)
+    b.tap(take_replay['cx'], take_replay['cy'])
+    time.sleep(0.15)
+    b.eval('window.__HALLOWEEN__.stepFrames(12)', await_promise=False)
+    st_tr = b.eval('({ st: window.__HALLOWEEN__.getState(), au: window.__HALLOWEEN__.getAudioStats() })', await_promise=False)
+    s_tr = st_tr.get('st') or {}
+    au_tr = st_tr.get('au') or {}
+    details['takeReplay'] = {
+        'phase': s_tr.get('phase'),
+        'activeVoId': au_tr.get('activeVoId'),
+        'particles': (s_tr.get('stats') or {}).get('particles'),
+        'moods': s_tr.get('moods'),
+        'actChoices': s_tr.get('actChoices'),
+    }
+    if s_tr.get('phase') != 'take_result':
+      failures.append(f'@mechanics/@ui-hud: #btn-take-replay changed phase from take_result to {s_tr.get("phase")!r}')
+    if au_tr.get('activeVoId') != 'vo_take_1_1':
+      failures.append(f'@mechanics/@audio-vo: #btn-take-replay expected vo_take_1_1, got {au_tr.get("activeVoId")!r}')
+    if int((s_tr.get('stats') or {}).get('particles', 0)) < 15:
+      failures.append(f'@mechanics/@world-render: #btn-take-replay spawned < 15 stage particles ({(s_tr.get("stats") or {}).get("particles")})')
+    if s_tr.get('moods') != moods_pre_take_replay:
+      failures.append(f'@mechanics: #btn-take-replay mutated committed moods! before={moods_pre_take_replay}, after={s_tr.get("moods")}')
+    if dict(s_tr.get('actChoices') or {}) != choices_pre_take_replay:
+      failures.append(
+          f'@mechanics: #btn-take-replay mutated actChoices! before={choices_pre_take_replay}, after={s_tr.get("actChoices")}'
+      )
+
+  # Stage Reel Replay (#btn-reel-replay on HUD after Take 1-A is filmed)
+  reel_replay = _find_btn(b, '#btn-reel-replay')
+  if not reel_replay.get('found'):
+    failures.append('@ui-hud: Missing visible #btn-reel-replay after Take 1-A was filmed')
+  else:
+    time.sleep(0.32)
+    b.tap(reel_replay['cx'], reel_replay['cy'])
+    time.sleep(0.15)
+    b.eval('window.__HALLOWEEN__.stepFrames(12)', await_promise=False)
+    au_reel = b.eval('window.__HALLOWEEN__.getAudioStats()', await_promise=False) or {}
+    details['reelReplay'] = {'activeVoId': au_reel.get('activeVoId'), 'lastVoId': au_reel.get('lastVoId')}
+    if au_reel.get('activeVoId') != 'vo_take_1_1':
+      failures.append(f'@ui-hud/@mechanics: #btn-reel-replay expected vo_take_1_1, got {au_reel.get("activeVoId")!r}')
+
+  # 5. Ending View: #btn-ending-replay (no progress.runsCompleted double-count!) + 10x rapid burst + Album [data-replay-vo]
+  b.eval(
+      r"""(() => {
+        const H = window.__HALLOWEEN__;
+        H.solveCurrentLevel('END1');
+        H.stepFrames(60);
+      })()""",
+      await_promise=False,
+  )
+  time.sleep(0.15)
+  runs_pre_ending_replay = int(
+      (((b.eval('window.__HALLOWEEN__.getState()', await_promise=False) or {}).get('progress') or {}).get('runsCompleted', 0))
+  )
+  ending_replay = _find_btn(b, '#btn-ending-replay')
+  if not ending_replay.get('found'):
+    failures.append('@ui-hud: Missing visible #btn-ending-replay on Ending screen')
+  else:
+    time.sleep(0.32)
+    b.tap(ending_replay['cx'], ending_replay['cy'])
+    time.sleep(0.15)
+    b.eval('window.__HALLOWEEN__.stepFrames(12)', await_promise=False)
+    st_end = b.eval('({ st: window.__HALLOWEEN__.getState(), au: window.__HALLOWEEN__.getAudioStats(), isSpeaking: Boolean(document.querySelector("#btn-ending-replay")?.classList.contains("is-speaking")) })', await_promise=False)
+    s_end = st_end.get('st') or {}
+    au_end = st_end.get('au') or {}
+    runs_after_ending_replay = int(((s_end.get('progress') or {}).get('runsCompleted', -1)))
+    details['endingReplay'] = {
+        'phase': s_end.get('phase'),
+        'activeVoId': au_end.get('activeVoId'),
+        'lastVoId': au_end.get('lastVoId'),
+        'particles': (s_end.get('stats') or {}).get('particles'),
+        'runsCompleted': runs_after_ending_replay,
+        'isSpeaking': st_end.get('isSpeaking'),
+    }
+    if not st_end.get('isSpeaking'):
+      failures.append('@ui-hud: #btn-ending-replay missing .is-speaking visual pulse during active VO')
+    if s_end.get('phase') != 'ending':
+      failures.append(f'@ui-hud/@mechanics: #btn-ending-replay left ending phase ({s_end.get("phase")!r})')
+    if au_end.get('activeVoId') != 'vo_end_1' or au_end.get('lastVoId') != 'vo_end_1':
+      failures.append(f'@mechanics/@audio-vo: #btn-ending-replay expected vo_end_1, got active={au_end.get("activeVoId")!r}, last={au_end.get("lastVoId")!r}')
+    if int((s_end.get('stats') or {}).get('particles', 0)) < 15:
+      failures.append(f'@mechanics: #btn-ending-replay spawned < 15 celebratory particles ({(s_end.get("stats") or {}).get("particles")})')
+    if runs_after_ending_replay != runs_pre_ending_replay:
+      failures.append(
+          f'@mechanics: #btn-ending-replay double-counted progress.runsCompleted ({runs_pre_ending_replay} -> {runs_after_ending_replay})'
+      )
+
+  # 10x rapid replay burst check (preemption safety, zero errors, dead === 0)
+  burst_res = b.eval(
+      r"""(() => {
+        const H = window.__HALLOWEEN__;
+        for (let i = 0; i < 10; i++) {
+          H.act('replay');
+          H.stepFrames(2);
+        }
+        const st = H.getState();
+        return {
+          au: H.getAudioStats(),
+          dead: st.feedback?.dead ?? -1,
+          runsCompleted: st.progress?.runsCompleted ?? -1,
+        };
+      })()""",
+      await_promise=False,
+  )
+  details['rapidBurst10x'] = burst_res
+  if (burst_res.get('au') or {}).get('activeVoId') != 'vo_end_1' or burst_res.get('dead') != 0:
+    failures.append(f'@audio-vo/@mechanics: 10x rapid replay burst failed: {burst_res}')
+  if int(burst_res.get('runsCompleted', -1)) != runs_pre_ending_replay:
+    failures.append(f'@mechanics: 10x rapid replay burst mutated progress.runsCompleted: {burst_res}')
+
+  # Film Album [data-replay-vo] check
+  b.eval('window.__HALLOWEEN__.act("openModal", { modal: "album" }); window.__HALLOWEEN__.stepFrames(20);', await_promise=False)
+  time.sleep(0.14)
+  album_vo_btn = _find_btn(b, '[data-replay-vo]')
+  if not album_vo_btn.get('found'):
+    failures.append('@ui-hud: Missing visible [data-replay-vo] button in Film Album modal')
+  else:
+    time.sleep(0.32)
+    b.tap(album_vo_btn['cx'], album_vo_btn['cy'])
+    time.sleep(0.15)
+    b.eval('window.__HALLOWEEN__.stepFrames(8)', await_promise=False)
+    au_alb = b.eval('window.__HALLOWEEN__.getAudioStats()', await_promise=False) or {}
+    expected_alb_vo = album_vo_btn.get('voId') or ''
+    details['albumVoReplay'] = {'expected': expected_alb_vo, 'activeVoId': au_alb.get('activeVoId')}
+    if expected_alb_vo and au_alb.get('activeVoId') != expected_alb_vo:
+      failures.append(f'@ui-hud/@audio-vo: Album [data-replay-vo] expected {expected_alb_vo!r}, got {au_alb.get("activeVoId")!r}')
+  b.eval('window.__HALLOWEEN__.act("closeModal"); window.__HALLOWEEN__.stepFrames(10);', await_promise=False)
+
+  return failures, details
+
 
 def run_vo_and_audio(save_shots: bool = True) -> dict[str, dict[str, Any]]:
   ensure_qa_dir()
@@ -357,6 +739,9 @@ def run_vo_and_audio(save_shots: bool = True) -> dict[str, dict[str, Any]]:
           'bgmGainAfter': round(gain_after, 3),
       })
 
+    replay_failures, replay_details = _verify_replay_controls_e2e(b)
+    g11_failures.extend(replay_failures)
+
     errs = flatten_errors(collect_runtime_errors(b))
     if errs:
       g11_failures.extend([f'@audio-vo/@core: Runtime error during VO test: {e}' for e in errs[:4]])
@@ -371,7 +756,7 @@ def run_vo_and_audio(save_shots: bool = True) -> dict[str, dict[str, Any]]:
       else f'FAIL ({"; ".join(g10_failures[:2])})'
   )
   g11_summary = (
-      'PASS (cutscene, take & ending VOs sync English captions, duck BGM <= 0.40, and restore cleanly)'
+      'PASS (VO captions, BGM ducking/restore & all 9 Replay controls + 10x burst + key R verified E2E)'
       if g11_passed
       else f'FAIL ({"; ".join(g11_failures[:2])})'
   )
@@ -381,7 +766,12 @@ def run_vo_and_audio(save_shots: bool = True) -> dict[str, dict[str, Any]]:
           'G10', '100% Neural English VO Integrity (52/52)', g10_passed, g10_summary, g10_metrics, g10_failures
       ),
       'G11': make_gate_result(
-          'G11', 'VO Caption Sync & BGM Auto-Ducking', g11_passed, g11_summary, {'clips': clip_checks}, g11_failures
+          'G11',
+          'VO Caption Sync, BGM Ducking & Replay Controls',
+          g11_passed,
+          g11_summary,
+          {'clips': clip_checks, 'replayControls': replay_details},
+          g11_failures,
       ),
   }
 

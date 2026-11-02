@@ -34,16 +34,19 @@ export function createEndingView(ctx, rootEl, bindTap, helpers) {
       <p id="ending-story-text" class="ending-story-text"></p>
 
       <div class="ending-buttons-grid">
-        <button type="button" id="btn-ending-again" class="sauin-btn btn-primary" data-action="film-again">
+        <button type="button" id="btn-ending-again" class="sauin-btn btn-primary ending-btn-half" data-action="film-again">
           <span>\uD83C\uDFAC Film Again</span>
         </button>
-        <button type="button" id="btn-ending-postcard" class="sauin-btn btn-ticket" data-action="ending-postcard">
-          <span>\uD83D\uDCF8 Save Postcard</span>
+        <button type="button" id="btn-ending-replay" class="sauin-btn btn-ticket btn-replay-accent ending-btn-half" data-action="ending-replay" aria-label="Replay Ending Narration">
+          <span>\uD83D\uDD0A Replay Voice</span>
         </button>
-        <button type="button" id="btn-ending-album" class="sauin-btn btn-ticket" data-action="ending-album">
-          <span>\uD83C\uDF9E Film Album</span>
+        <button type="button" id="btn-ending-postcard" class="sauin-btn btn-ticket ending-btn-third" data-action="ending-postcard">
+          <span>\uD83D\uDCF8 Postcard</span>
         </button>
-        <button type="button" id="btn-ending-rewards" class="sauin-btn btn-ticket" data-action="ending-rewards">
+        <button type="button" id="btn-ending-album" class="sauin-btn btn-ticket ending-btn-third" data-action="ending-album">
+          <span>\uD83C\uDF9E Album</span>
+        </button>
+        <button type="button" id="btn-ending-rewards" class="sauin-btn btn-ticket ending-btn-third" data-action="ending-rewards">
           <span>\uD83C\uDF81 Rewards</span>
         </button>
       </div>
@@ -59,6 +62,7 @@ export function createEndingView(ctx, rootEl, bindTap, helpers) {
   const moodSummaryEl = el.querySelector('#ending-mood-summary');
   const storyTextEl = el.querySelector('#ending-story-text');
   const btnAgain = el.querySelector('#btn-ending-again');
+  const btnReplay = el.querySelector('#btn-ending-replay');
   const btnPostcard = el.querySelector('#btn-ending-postcard');
   const btnAlbum = el.querySelector('#btn-ending-album');
   const btnRewards = el.querySelector('#btn-ending-rewards');
@@ -67,6 +71,18 @@ export function createEndingView(ctx, rootEl, bindTap, helpers) {
     helpers.unlockAudio();
     ctx.events?.emit?.('sfx', { name: 'clapper_snap', vol: 0.75 });
     ctx.mechanics?.startRun?.({ seed: (ctx.state?.seed || 20261031) + 1, startAct: 1, skipDialogue: false });
+    helpers.requestSync();
+  });
+
+  bindTap(btnReplay, () => {
+    helpers.unlockAudio();
+    ctx.audio?.setMuted?.({ vo: false });
+    ctx.persistence?.saveAudio?.({ voMuted: false });
+    if (typeof ctx.mechanics?.replayEnding === 'function') {
+      ctx.mechanics.replayEnding({ unmute: true });
+    } else if (ctx.state?.currentEnding?.voId) {
+      ctx.audio?.playVO?.(ctx.state.currentEnding.voId, { force: true, unmute: true });
+    }
     helpers.requestSync();
   });
 

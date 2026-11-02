@@ -39,13 +39,15 @@ export function createTakeCard(ctx, rightColEl, bindTap, helpers) {
       <p id="take-card-narration" class="script-body-narration"></p>
 
       <div id="take-card-deltas" class="script-deltas-row"></div>
-
-      <button type="button" id="btn-take-postcard" class="sauin-btn btn-ticket" data-action="save-postcard">
-        <span>\uD83D\uDCF8 Save Postcard</span>
-      </button>
     </div>
 
-    <div class="take-actions-bottom">
+    <div class="take-actions-bottom take-actions-grid">
+      <button type="button" id="btn-take-replay" class="sauin-btn btn-replay-accent" data-action="replay-take" aria-label="Replay Stage Take and Voiceover">
+        <span>\uD83D\uDD0A Replay Take</span>
+      </button>
+      <button type="button" id="btn-take-postcard" class="sauin-btn btn-ticket" data-action="save-postcard">
+        <span>\uD83D\uDCF8 Postcard</span>
+      </button>
       <button type="button" id="btn-reshoot" class="sauin-btn" data-action="reshoot">
         <span>\u21BA Reshoot</span>
       </button>
@@ -63,6 +65,7 @@ export function createTakeCard(ctx, rightColEl, bindTap, helpers) {
   const thumbImgEl = el.querySelector('#take-card-thumb');
   const narrationEl = el.querySelector('#take-card-narration');
   const deltasRowEl = el.querySelector('#take-card-deltas');
+  const btnReplayTake = el.querySelector('#btn-take-replay');
   const btnPostcard = el.querySelector('#btn-take-postcard');
   const btnReshoot = el.querySelector('#btn-reshoot');
   const btnNextAct = el.querySelector('#btn-next-act');
@@ -72,6 +75,14 @@ export function createTakeCard(ctx, rightColEl, bindTap, helpers) {
     if (payload.isNewTake && payload.takeId) {
       lastNewTakeId = payload.takeId;
     }
+  });
+
+  bindTap(btnReplayTake, () => {
+    helpers.unlockAudio();
+    ctx.audio?.setMuted?.({ vo: false });
+    ctx.persistence?.saveAudio?.({ voMuted: false });
+    ctx.mechanics?.replayTake?.(null, { unmute: true });
+    helpers.requestSync();
   });
 
   bindTap(btnReshoot, () => {

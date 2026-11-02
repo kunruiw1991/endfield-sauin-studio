@@ -10,7 +10,7 @@ Executes all 14 numeric quality gates from docs/DESIGN.md §8:
 - G14            Render Performance & Memory Stability (p95 <= 20ms, drawCalls <= 80, triangles <= 60000,
                  geometries & textures stable +/-5% across 10 consecutive reshoots)
 
-All screenshots, logs, and reports are written strictly to /tmp/bv13d_halloween/qa/.
+All screenshots, logs, and reports are written strictly to /tmp/bv13d_replay/qa/.
 """
 from __future__ import annotations
 
